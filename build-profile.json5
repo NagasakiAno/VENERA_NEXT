@@ -1,0 +1,59 @@
+{
+  "app": {
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          // 签名材料(p12 私钥 / p7b 证书)不入库。
+          // 请在 DevEco Studio 的 Signing Configs 里生成或选择自己的签名材料，
+          // 或执行 devecocli signature generate --product default 自动生成。
+          "storeFile": "",
+          "storePassword": "",
+          "keyAlias": "",
+          "keyPassword": "",
+          "signAlg": "SHA256withECDSA",
+          "profile": "",
+          "certpath": ""
+        }
+      }
+    ],
+    "products": [
+      {
+        "name": "default",
+        "signingConfig": "default",
+        "targetSdkVersion": "26.0.0",
+        "compatibleSdkVersion": "26.0.0",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          }
+        }
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug",
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}

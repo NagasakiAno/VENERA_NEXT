@@ -1,0 +1,316 @@
+/**
+ * 网络漫画阅读服务 (阶段3: 详情 → 章节图片管道)
+ *
+ * 链路(对应原版 ImageDownloader + CacheManager):
+ *   comic.loadEp(comicId, epId) -> images: string[]
+ *   每张图:
+ *     comic.onImageLoad(url, comicId, epId) -> { headers, modifyImage? }
+ *     -> HTTP(带 headers) -> 解码为 RGBA 缓冲
+ *     -> 可选: 执行 modifyImage 还原(如 jm 的乱序拼接)
+ *     -> PixelMap(内存缓存)
+ */
+import { image } from '@kit.ImageKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
+import { httpClient, HttpMethod, ResponseType } from '../network/HttpClient';
+import { jsRuntime } from '../runtime/JsRuntime';
+import { imageBridge, ImageBuffer } from '../runtime/ImageBridge';
+
+const DOMAIN = 0x0000;
+const TAG = 'ComicReadService';
+/** 内存缓存上限(张), 超出后释放最早的 */
+const MAX_CACHE = 8;
+const IMAGE_TIMEOUT_MS = 30000;
+
+/** 一个章节的图片地址列表 */
+export class ChapterImages {
+  urls: string[] = [];
+  error: string = '';
+
+  isOk(): boolean {
+    return this.error.length === 0 && this.urls.length > 0;
+  }
+}
+
+/** onImageLoad 的配置 */
+interface ImageLoadingConfig {
+  /** 源解析出的真实图片地址, 空串表示沿用传入的地址 */
+  url: string;
+  headers: Record<string, string>;
+  /** 源提供的还原代码(源码字符串), 空串表示无需还原 */
+  modifyImage: string;
+}
+
+/** 解码后的原始像素 */
+class RawPixels {
+  width: number = 0;
+  height: number = 0;
+  buffer: ArrayBuffer = new ArrayBuffer(0);
+}
+
+export class ComicReadService {
+  private static instance: ComicReadService = new ComicReadService();
+  private cache: Map<string, image.PixelMap> = new Map<string, image.PixelMap>();
+  private cacheOrder: string[] = [];
+
+  static getInstance(): ComicReadService {
+    return ComicReadService.instance;
+  }
+
+  /** 拉取章节图片地址(comic.loadEp) */
+  async loadImages(sourceKey: string, comicId: string, epId: string): Promise<ChapterImages> {
+    const out = new ChapterImages();
+    let json = '';
+    try {
+      json = await jsRuntime.callLoadEp(sourceKey, comicId, epId);
+    } catch (e) {
+      out.error = `${e}`;
+      hilog.warn(DOMAIN, TAG, 'loadEp 失败 %{public}s@%{public}s/%{public}s: %{public}s',
+        sourceKey, comicId, epId, out.error);
+      return out;
+    }
+    let parsed: Object;
+    try {
+      parsed = JSON.parse(json) as Object;
+    } catch (e) {
+      out.error = '章节数据无法解析';
+      return out;
+    }
+    if (parsed === null || parsed === undefined) {
+      out.error = '该章节没有图片';
+      return out;
+    }
+    // 兼容 { images: [] } 与直接返回数组两种写法
+    let list: Object = parsed;
+    if (!Array.isArray(parsed)) {
+      const rec = parsed as Record<string, Object>;
+      list = rec['images'] ?? rec['imagesList'] ?? rec['urls'];
+    }
+    if (list === undefined || list === null || !Array.isArray(list)) {
+      out.error = '该章节没有图片';
+      return out;
+    }
+    const arr = list as Object[];
+    for (let i = 0; i < arr.length; i++) {
+      const u = arr[i];
+      if (typeof u === 'string' && (u as string).length > 0) {
+        out.urls.push(u as string);
+      }
+    }
+    if (out.urls.length === 0) {
+      out.error = '该章节没有图片';
+    }
+    hilog.info(DOMAIN, TAG, '章节 %{public}s@%{public}s: %{public}d 张图',
+      sourceKey, epId, out.urls.length);
+    return out;
+  }
+
+  /**
+   * 加载单张图片: 带源声明的请求头下载, 必要时执行图片还原, 返回可直接渲染的 PixelMap。
+   * 命中内存缓存时直接返回(调用方不要 release 缓存里的对象)。
+   */
+  async loadImage(sourceKey: string, comicId: string, epId: string,
+                  url: string): Promise<image.PixelMap | null> {
+    const cacheKey = sourceKey + '|' + epId + '|' + url;
+    const hit = this.cache.get(cacheKey);
+    if (hit !== undefined) {
+      return hit;
+    }
+    const cfg = await this.loadConfig(sourceKey, comicId, epId, url);
+    // 源可以把「图片标识」换成真实地址(如 e-hentai 用页码换 URL), 对应原版 configs['url'] ?? imageKey
+    const target = cfg.url.length > 0 ? cfg.url : url;
+    const bytes = await this.download(target, cfg.headers);
+    if (bytes === null) {
+      return null;
+    }
+    const raw = await decode(bytes);
+    if (raw === null) {
+      return null;
+    }
+    let pm = await this.applyModify(sourceKey, raw, cfg.modifyImage);
+    if (pm === null) {
+      // 还原失败时退回原图, 至少能看
+      pm = await createFromPixels(raw);
+    }
+    if (pm === null) {
+      return null;
+    }
+    this.putCache(cacheKey, pm);
+    hilog.info(DOMAIN, TAG, '图片就绪 %{public}d×%{public}d %{public}s',
+      raw.width, raw.height, truncate(url));
+    return pm;
+  }
+
+  /** 清空缓存(退出阅读器时调用) */
+  clearCache(): void {
+    this.cache.forEach((pm: image.PixelMap) => {
+      pm.release();
+    });
+    this.cache.clear();
+    this.cacheOrder = [];
+  }
+
+  // ---------------------------------------------------------------- 内部
+
+  private async loadConfig(sourceKey: string, comicId: string, epId: string,
+                           url: string): Promise<ImageLoadingConfig> {
+    const cfg: ImageLoadingConfig = { url: '', headers: {}, modifyImage: '' };
+    let json = '';
+    try {
+      json = await jsRuntime.callOnImageLoad(sourceKey, url, comicId, epId);
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'onImageLoad 失败: %{public}s', `${e}`);
+      return cfg;
+    }
+    let parsed: Object;
+    try {
+      parsed = JSON.parse(json) as Object;
+    } catch (e) {
+      return cfg;
+    }
+    if (parsed === null || parsed === undefined) {
+      return cfg;
+    }
+    const rec = parsed as Record<string, Object>;
+    const u = rec['url'];
+    if (typeof u === 'string' && (u as string).length > 0) {
+      cfg.url = u as string;
+    }
+    const h = rec['headers'];
+    if (h !== undefined && h !== null) {
+      const hr = h as Record<string, Object>;
+      Object.keys(hr).forEach((k: string) => {
+        const v = hr[k];
+        if (typeof v === 'string' && (v as string).length > 0) {
+          cfg.headers[k] = v as string;
+        }
+      });
+    }
+    const m = rec['modifyImage'];
+    if (typeof m === 'string' && (m as string).length > 0) {
+      cfg.modifyImage = m as string;
+    }
+    return cfg;
+  }
+
+  private async download(url: string,
+                         headers: Record<string, string>): Promise<Uint8Array | null> {
+    try {
+      const bytes = await httpClient.request<Uint8Array>({
+        url: url,
+        method: HttpMethod.GET,
+        headers: headers,
+        responseType: ResponseType.BYTES,
+        timeout: IMAGE_TIMEOUT_MS
+      });
+      return bytes.length > 0 ? bytes : null;
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, '图片下载失败 %{public}s: %{public}s', truncate(url), `${e}`);
+      return null;
+    }
+  }
+
+  /** 执行源提供的还原代码; 未提供或失败返回 null */
+  private async applyModify(sourceKey: string, raw: RawPixels,
+                            code: string): Promise<image.PixelMap | null> {
+    if (code.length === 0) {
+      return null;
+    }
+    const inKey = imageBridge.put(new ImageBuffer(raw.width, raw.height, raw.buffer));
+    try {
+      const outKey = await jsRuntime.callModifyImage(sourceKey, inKey, code);
+      const out = outKey > 0 ? imageBridge.get(outKey) : null;
+      if (out === null) {
+        hilog.warn(DOMAIN, TAG, '图片还原未返回结果(源=%{public}s)', sourceKey);
+        return null;
+      }
+      const copy = new ImageBuffer(out.width, out.height, out.pixels.slice(0));
+      imageBridge.release(outKey);
+      hilog.info(DOMAIN, TAG, '图片还原完成 %{public}d×%{public}d (源=%{public}s)',
+        copy.width, copy.height, sourceKey);
+      return await createFromPixels(copyToRaw(copy));
+    } finally {
+      imageBridge.release(inKey);
+    }
+  }
+
+  private putCache(key: string, pm: image.PixelMap): void {
+    this.cache.set(key, pm);
+    this.cacheOrder.push(key);
+    while (this.cacheOrder.length > MAX_CACHE) {
+      const old = this.cacheOrder.shift();
+      if (old !== undefined) {
+        const victim = this.cache.get(old);
+        if (victim !== undefined) {
+          victim.release();
+          this.cache.delete(old);
+        }
+      }
+    }
+  }
+}
+
+/** 解码图片字节为 RGBA 原始像素 */
+async function decode(bytes: Uint8Array): Promise<RawPixels | null> {
+  let src: image.ImageSource | null = null;
+  let pm: image.PixelMap | null = null;
+  try {
+    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    src = image.createImageSource(buffer);
+    const opts: image.DecodingOptions = {
+      editable: true,
+      desiredPixelFormat: image.PixelMapFormat.RGBA_8888
+    };
+    pm = await src.createPixelMap(opts);
+    const info = await pm.getImageInfo();
+    const raw = new RawPixels();
+    raw.width = info.size.width;
+    raw.height = info.size.height;
+    const buf = new ArrayBuffer(pm.getPixelBytesNumber());
+    await pm.readPixelsToBuffer(buf);
+    raw.buffer = buf;
+    return raw;
+  } catch (e) {
+    hilog.warn(DOMAIN, TAG, '图片解码失败: %{public}s', `${e}`);
+    return null;
+  } finally {
+    if (pm !== null) {
+      pm.release();
+    }
+    if (src !== null) {
+      src.release();
+    }
+  }
+}
+
+/** 用 RGBA 原始像素构造 PixelMap */
+async function createFromPixels(raw: RawPixels): Promise<image.PixelMap | null> {
+  if (raw.width <= 0 || raw.height <= 0 || raw.buffer.byteLength === 0) {
+    return null;
+  }
+  try {
+    const opts: image.InitializationOptions = {
+      size: { width: raw.width, height: raw.height },
+      pixelFormat: image.PixelMapFormat.RGBA_8888,
+      editable: false
+    };
+    return await image.createPixelMap(raw.buffer, opts);
+  } catch (e) {
+    hilog.warn(DOMAIN, TAG, '构造 PixelMap 失败: %{public}s', `${e}`);
+    return null;
+  }
+}
+
+function copyToRaw(buf: ImageBuffer): RawPixels {
+  const raw = new RawPixels();
+  raw.width = buf.width;
+  raw.height = buf.height;
+  raw.buffer = buf.pixels;
+  return raw;
+}
+
+function truncate(s: string): string {
+  return s.length > 90 ? s.substring(0, 90) + '…' : s;
+}
+
+/** 全局单例 */
+export const comicReadService = ComicReadService.getInstance();

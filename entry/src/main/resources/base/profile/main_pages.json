@@ -1,0 +1,9 @@
+{
+  "src": [
+    "pages/Index",
+    "pages/settings/ComicSourcePage",
+    "pages/settings/SourceDetailPage",
+    "pages/category/CategoriesPage",
+    "pages/category/CategoryComicsPage"
+  ]
+}

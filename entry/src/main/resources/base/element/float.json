@@ -1,0 +1,21 @@
+{
+  "float": [
+    { "name": "page_text_font_size", "value": "50fp" },
+
+    { "name": "radius_sm", "value": "4vp" },
+    { "name": "radius_md", "value": "8vp" },
+    { "name": "radius_lg", "value": "12vp" },
+    { "name": "radius_xl", "value": "16vp" },
+
+    { "name": "space_1", "value": "4vp" },
+    { "name": "space_2", "value": "8vp" },
+    { "name": "space_3", "value": "12vp" },
+    { "name": "space_4", "value": "16vp" },
+    { "name": "space_5", "value": "24vp" },
+    { "name": "space_6", "value": "32vp" },
+
+    { "name": "font_body", "value": "15fp" },
+    { "name": "font_caption", "value": "12fp" },
+    { "name": "font_headline", "value": "20fp" }
+  ]
+}

@@ -1,0 +1,24 @@
+/node_modules
+/oh_modules
+/local.properties
+/.idea
+**/build
+/.hvigor
+.cxx
+/.clangd
+/.clang-format
+/.clang-tidy
+**/.test
+/.appanalyzer
+
+# 签名材料(p12 私钥 / p7b 证书 / csr)一律不入库
+/signing/
+*.p12
+*.p7b
+*.cer
+*.csr
+
+# 系统与日志
+Thumbs.db
+.DS_Store
+*.log

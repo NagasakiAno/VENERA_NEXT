@@ -1,0 +1,635 @@
+/**
+ * 漫画详情页(最小实现)
+ *
+ * 数据入口: 源脚本的 comic.loadInfo(id) -> ComicDetails, 对应原版 ComicPage。
+ * 当前服务于搜索框的「按 ID 直达」; 章节阅读(comic.loadEp + 图片管道)属后续阶段。
+ */
+import { promptAction } from '@kit.ArkUI';
+import { image } from '@kit.ImageKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
+import { Comic, ComicDetails } from '../../model/ComicModels';
+import { ReaderChapter, ReaderPageItem, ReaderPageType } from '../../model/ReaderModel';
+import { comicDetailService } from '../../services/ComicDetailService';
+import { comicReadService } from '../../services/ComicReadService';
+import { readHistoryService, ReadHistoryItem } from '../../services/ReadHistoryService';
+import { ReaderPage } from './ReaderPage';
+import { PRIMARY, PRIMARY_50, SUCCESS, GRAY_100, GRAY_500, GRAY_900, CARD, BG, MUTED_FG, ERROR,
+  RADIUS_SM, RADIUS_MD, RADIUS_LG, SPACE_2, SPACE_3, SPACE_4,
+  FS_TITLE, FS_SECTION, FS_BODY, FS_CAPTION, FS_SMALL } from '../../utils/Design';
+
+const DOMAIN = 0x0000;
+const TAG = 'ComicDetailPage';
+/** 标签最多展示条数(部分源的标签极多) */
+const MAX_TAGS = 30;
+
+/** 扁平化后的章节项 */
+class ChapterItem {
+  id: string = '';
+  title: string = '';
+}
+
+/** 展示用标签 */
+class TagItem {
+  text: string = '';
+}
+
+@Component
+export struct ComicDetailPage {
+  sourceKey: string = '';
+  sourceName: string = '';
+  comicId: string = '';
+  onBack: () => void = () => {};
+
+  /** 推荐位跳转会替换当前 ID, 因此用内部状态而非直接读 prop */
+  @State currentId: string = '';
+  /** 详情数据(未加载时为占位对象, 由 hasDetail 判定是否可用) */
+  @State detail: ComicDetails = new ComicDetails('', {});
+  @State hasDetail: boolean = false;
+  @State chapters: ChapterItem[] = [];
+  @State tags: TagItem[] = [];
+  @State recommend: Comic[] = [];
+  @State loading: boolean = true;
+  @State errorMsg: string = '';
+  /** 阅读器覆盖层(网络章节) */
+  @State readerVisible: boolean = false;
+  @State readerChapter: ReaderChapter | null = null;
+  @State chapterLoading: boolean = false;
+  /** 打开的章节要跳到的页码(0 基), 用于续读 */
+  @State readerStartPage: number = 0;
+  /** 本漫画的阅读进度(无则 null) */
+  @State progress: ReadHistoryItem | null = null;
+  /** 当前阅读章节的图片地址(与 readerChapter.pages 下标对齐) */
+  private readerUrls: string[] = [];
+  private readerEpId: string = '';
+
+  aboutToAppear(): void {
+    hilog.info(DOMAIN, TAG, '详情页创建 id=%{public}s', this.comicId);
+    this.currentId = this.comicId;
+    this.reload();
+  }
+
+  private reload(): void {
+    hilog.info(DOMAIN, TAG, '详情页 reload id=%{public}s', this.currentId);
+    this.loadDetail(this.currentId);
+  }
+
+  private async loadDetail(id: string): Promise<void> {
+    if (id.length === 0) {
+      return;
+    }
+    this.currentId = id;
+    this.loading = true;
+    this.errorMsg = '';
+    this.hasDetail = false;
+    try {
+      const d = await comicDetailService.load(this.sourceKey, id);
+      this.detail = d;
+      this.hasDetail = true;
+      this.chapters = buildChapters(d);
+      this.tags = buildTags(d);
+      this.recommend = d.recommend;
+    } catch (e) {
+      this.errorMsg = `${e}`;
+      hilog.warn(DOMAIN, TAG, '加载详情失败 %{public}s@%{public}s: %{public}s',
+        this.sourceKey, id, this.errorMsg);
+    } finally {
+      this.loading = false;
+      // 详情就绪后读取该漫画的阅读进度
+      this.progress = readHistoryService.find(this.sourceKey, this.currentId);
+    }
+  }
+
+  /** 续读: 打开上次的章节并跳到上次的页码 */
+  private continueReading(): void {
+    const p = this.progress;
+    if (p === null) {
+      return;
+    }
+    let target: ChapterItem | null = null;
+    for (let i = 0; i < this.chapters.length; i++) {
+      if (this.chapters[i].id === p.epId) {
+        target = this.chapters[i];
+        break;
+      }
+    }
+    if (target === null) {
+      promptAction.showToast({ message: '上次阅读的章节已不存在' });
+      return;
+    }
+    this.readerStartPage = p.page;
+    this.openReader(target).catch((e: Error) => {
+      hilog.warn(DOMAIN, TAG, '续读失败: %{public}s', `${e}`);
+    });
+  }
+
+  /** 阅读器页码变化: 记录进度(不刷新本页状态, 避免打断阅读) */
+  private onReaderProgress: (page: number, total: number) => void =
+    (page: number, total: number): void => {
+      if (this.readerUrls.length === 0) {
+        return;
+      }
+      const item = new ReadHistoryItem();
+      item.sourceKey = this.sourceKey;
+      item.comicId = this.currentId;
+      item.comicTitle = this.detail.title;
+      item.cover = this.detail.cover;
+      item.epId = this.readerEpId;
+      item.epTitle = this.readerChapter !== null ? this.readerChapter.title : '';
+      item.page = page;
+      item.total = total;
+      readHistoryService.record(item);
+    };
+
+  /** 续读按钮文案: 继续阅读 · 第X话 (P3/25) */
+  private progressLabel(): string {
+    const p = this.progress;
+    if (p === null) {
+      return '继续阅读';
+    }
+    const ep = p.epTitle.length > 0 ? p.epTitle : p.epId;
+    return `继续阅读 · ${ep}（P${p.page + 1}/${p.total}）`;
+  }
+
+  /** 续读按钮副标题: 下 · P3/25 */
+  private progressBrief(): string {
+    const p = this.progress;
+    if (p === null) {
+      return '';
+    }
+    const ep = p.epTitle.length > 0 ? p.epTitle : p.epId;
+    return `${ep} · P${p.page + 1}/${p.total}`;
+  }
+
+  private openChapter(c: ChapterItem): void {
+    // 直接点章节: 从第一页开始
+    this.readerStartPage = 0;
+    this.openReader(c).catch((e: Error) => {
+      hilog.warn(DOMAIN, TAG, '打开章节失败: %{public}s', `${e}`);
+    });
+  }
+
+  /** 打开章节: 先取图片地址列表, 再交给阅读器按页懒加载 */
+  private async openReader(c: ChapterItem): Promise<void> {
+    if (this.chapterLoading) {
+      return;
+    }
+    this.chapterLoading = true;
+    promptAction.showToast({ message: '正在加载章节…' });
+    try {
+      const ok = await this.openChapterAt(c);
+      if (ok) {
+        this.readerVisible = true;
+      }
+    } finally {
+      this.chapterLoading = false;
+    }
+  }
+
+  /** 载入某一章的图片地址并替换阅读内容(不改变阅读器显隐) */
+  private async openChapterAt(c: ChapterItem): Promise<boolean> {
+    const res = await comicReadService.loadImages(this.sourceKey, this.currentId, c.id);
+    if (!res.isOk()) {
+      promptAction.showToast({ message: res.error.length > 0 ? res.error : '章节加载失败' });
+      return false;
+    }
+    this.readerUrls = res.urls;
+    this.readerEpId = c.id;
+    const pages: ReaderPageItem[] = [];
+    for (let i = 0; i < res.urls.length; i++) {
+      pages.push(new ReaderPageItem(ReaderPageType.IMAGE, i, '', '', '', '', ''));
+    }
+    // 换新对象: ReaderPage 的 @Watch 会重置页状态
+    this.readerChapter = new ReaderChapter(1, c.title, pages);
+    return true;
+  }
+
+  /** 当前阅读章节在章节列表中的下标(不在列表里返回 -1) */
+  private readerChapterIndex(): number {
+    for (let i = 0; i < this.chapters.length; i++) {
+      if (this.chapters[i].id === this.readerEpId) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  /** 阅读器请求切章: delta = -1 上一话 / 1 下一话 */
+  private switchReaderChapter: (delta: number) => Promise<boolean> =
+    async (delta: number): Promise<boolean> => {
+      const idx = this.readerChapterIndex();
+      if (idx < 0) {
+        return false;
+      }
+      const next = idx + delta;
+      if (next < 0 || next >= this.chapters.length) {
+        return false;
+      }
+      const ok = await this.openChapterAt(this.chapters[next]);
+      if (ok) {
+        hilog.info(DOMAIN, TAG, '切换到章节 %{public}s', this.chapters[next].title);
+      }
+      return ok;
+    };
+
+  /** 阅读器按页取图: 带源声明的请求头, 必要时执行图片还原 */
+  private loadReaderPage: (index: number) => Promise<image.PixelMap | null> =
+    (index: number): Promise<image.PixelMap | null> => {
+      if (index < 0 || index >= this.readerUrls.length) {
+        return Promise.resolve(null);
+      }
+      return comicReadService.loadImage(this.sourceKey, this.currentId, this.readerEpId,
+        this.readerUrls[index]);
+    };
+
+  // ---------------------------------------------------------------- UI
+
+  @Builder
+  header() {
+    Row({ space: SPACE_2 }) {
+      Row() {
+        SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(18).fontColor([GRAY_500])
+      }
+      .width(36).height(36).borderRadius(18).backgroundColor(GRAY_100)
+      .justifyContent(FlexAlign.Center)
+      .onClick(() => {
+        this.onBack();
+      })
+
+      Column({ space: 2 }) {
+        Text(this.hasDetail ? this.detail.title : '漫画详情')
+          .fontSize(FS_TITLE).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+        Text(this.sourceName.length > 0 ? `${this.sourceName} · ${this.currentId}` : this.currentId)
+          .fontSize(11).fontColor(MUTED_FG)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+      }
+      .layoutWeight(1).alignItems(HorizontalAlign.Start)
+    }
+    .width('100%').alignItems(VerticalAlign.Center)
+    .padding({ left: SPACE_3, right: SPACE_3, top: SPACE_2, bottom: SPACE_2 })
+  }
+
+  @Builder
+  chip(text: string, bg: string, fg: string) {
+    Text(text).fontSize(FS_SMALL).fontColor(fg).backgroundColor(bg)
+      .borderRadius(RADIUS_SM).padding({ left: 10, right: 10, top: 4, bottom: 4 })
+  }
+
+  @Builder
+  infoSection(d: ComicDetails) {
+    Row({ space: SPACE_3 }) {
+      if (d.cover.length > 0) {
+        Image(d.cover)
+          .width(96).height(128)
+          .objectFit(ImageFit.Cover)
+          .borderRadius(RADIUS_MD).backgroundColor(GRAY_100)
+      } else {
+        Column().width(96).height(128)
+          .borderRadius(RADIUS_MD).backgroundColor(GRAY_100)
+      }
+
+      Column({ space: 4 }) {
+        Text(d.title)
+          .fontSize(FS_TITLE).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
+          .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+        if (d.subtitle.length > 0) {
+          Text(d.subtitle).fontSize(FS_SMALL).fontColor(MUTED_FG)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%')
+        }
+        if (d.uploader.length > 0) {
+          Text('作者: ' + d.uploader).fontSize(FS_CAPTION).fontColor(MUTED_FG)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%')
+        }
+        Row({ space: 6 }) {
+          this.chip(this.sourceName.length > 0 ? this.sourceName : this.sourceKey, PRIMARY_50, PRIMARY)
+          if (d.isFavorite) {
+            this.chip('已收藏', SUCCESS, CARD)
+          }
+        }
+        .margin({ top: 2 })
+      }
+      .layoutWeight(1).alignItems(HorizontalAlign.Start)
+    }
+    .width('100%').alignItems(VerticalAlign.Top)
+  }
+
+  /** 数据行: 赞 / 更新时间 / 章节数 */
+  @Builder
+  metaRow(d: ComicDetails) {
+    Row() {
+      this.metaCell(d.likesCount > 0 ? d.likesCount.toString() : '-', '点赞')
+      this.metaCell(d.updateTime.length > 0 ? d.updateTime : '-', '最近更新')
+      this.metaCell(this.chapters.length.toString(), '章节')
+    }
+    .width('100%').padding({ top: SPACE_3, bottom: SPACE_3, left: SPACE_3, right: SPACE_3 })
+    .backgroundColor(CARD).borderRadius(RADIUS_LG).margin({ top: SPACE_3 })
+  }
+
+  @Builder
+  metaCell(val: string, label: string) {
+    Column({ space: 2 }) {
+      Text(val).fontSize(FS_BODY).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+      Text(label).fontSize(FS_SMALL).fontColor(MUTED_FG)
+    }
+    .layoutWeight(1).alignItems(HorizontalAlign.Start)
+  }
+
+  /** 主操作: 收藏 / 继续阅读(有进度) 或 从头阅读 */
+  @Builder
+  actionRow() {
+    Row({ space: 10 }) {
+      Column({ space: 2 }) {
+        SymbolGlyph($r('sys.symbol.heart')).fontSize(22).fontColor([GRAY_500])
+        Text('收藏').fontSize(FS_SMALL).fontColor(MUTED_FG)
+      }
+      .width(72).height(48).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
+      .backgroundColor(GRAY_100)
+      .onClick(() => {
+        promptAction.showToast({ message: '收藏功能开发中' });
+      })
+
+      if (this.progress !== null) {
+        Column({ space: 2 }) {
+          Text('继续阅读').fontSize(15).fontColor(CARD).fontWeight(FontWeight.Medium)
+          Text(this.progressBrief()).fontSize(9).fontColor('#CCFFFFFF')
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .height(48).layoutWeight(1).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
+        .backgroundColor(PRIMARY_50)
+        .onClick(() => {
+          this.continueReading();
+        })
+      }
+
+      Column() {
+        Text(this.progress !== null ? '从头阅读' : '开始阅读')
+          .fontSize(15).fontColor(CARD).fontWeight(FontWeight.Medium)
+      }
+      .height(48).layoutWeight(1).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
+      .backgroundColor(PRIMARY)
+      .onClick(() => {
+        this.readFromStart();
+      })
+    }
+    .width('100%').margin({ top: SPACE_3 })
+  }
+
+  /** 从第一章开始读 */
+  private readFromStart(): void {
+    if (this.chapters.length === 0) {
+      promptAction.showToast({ message: '没有可阅读的章节' });
+      return;
+    }
+    this.openChapter(this.chapters[0]);
+  }
+
+  @Builder
+  tagSection() {
+    Column({ space: SPACE_2 }) {
+      Text(`标签 (${this.tags.length})`)
+        .fontSize(FS_CAPTION).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
+      Flex({ wrap: FlexWrap.Wrap }) {
+        ForEach(this.tags, (t: TagItem) => {
+          Text(t.text).fontSize(FS_SMALL).fontColor(GRAY_900)
+            .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+            .backgroundColor(GRAY_100).borderRadius(12)
+            .margin({ right: 6, bottom: 6 })
+        }, (t: TagItem, i: number) => `tag#${i}#${t.text}`)
+      }
+      .width('100%')
+    }
+    .width('100%').alignItems(HorizontalAlign.Start)
+  }
+
+  /** 章节行: 序号 + 标题 + 提示(读到过 / 右箭头) */
+  @Builder
+  chapterRow(c: ChapterItem, idx: number) {
+    Row({ space: SPACE_3 }) {
+      Text((idx + 1).toString())
+        .fontSize(FS_SMALL).fontColor(MUTED_FG)
+        .width(28).height(28).textAlign(TextAlign.Center)
+        .borderRadius(14).backgroundColor(GRAY_100)
+
+      Column({ space: 2 }) {
+        Text(c.title.length > 0 ? c.title : c.id)
+          .fontSize(FS_BODY).fontColor(GRAY_900)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+        if (this.isReadingChapter(c)) {
+          Text('读到第 ' + ((this.progress?.page ?? 0) + 1) + ' 页')
+            .fontSize(10).fontColor(PRIMARY)
+        }
+      }
+      .layoutWeight(1).alignItems(HorizontalAlign.Start)
+
+      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(14).fontColor([MUTED_FG])
+    }
+    .width('100%').height(52)
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => {
+      this.openChapter(c);
+    })
+  }
+
+  /** 该章节是否是上次读到的章节 */
+  private isReadingChapter(c: ChapterItem): boolean {
+    const p = this.progress;
+    return p !== null && p.epId === c.id;
+  }
+
+  @Builder
+  chapterSection() {
+    Column({ space: SPACE_2 }) {
+      Text(`章节 (${this.chapters.length})`)
+        .fontSize(FS_CAPTION).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
+        .width('100%')
+      Column() {
+        ForEach(this.chapters, (c: ChapterItem, idx: number) => {
+          this.chapterRow(c, idx)
+          if (idx < this.chapters.length - 1) {
+            Divider().color(GRAY_100).strokeWidth(0.5)
+          }
+        }, (c: ChapterItem) => `cp#${c.id}`)
+      }
+      .width('100%').padding({ left: SPACE_3, right: SPACE_3 })
+      .backgroundColor(CARD).borderRadius(RADIUS_LG)
+    }
+    .width('100%').alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  recommendSection() {
+    Column({ space: SPACE_2 }) {
+      Text('相关推荐')
+        .fontSize(FS_CAPTION).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
+      Scroll() {
+        Row({ space: SPACE_2 }) {
+          ForEach(this.recommend, (c: Comic) => {
+            Column() {
+              if (c.cover.length > 0) {
+                Image(c.cover)
+                  .width(96).aspectRatio(0.72)
+                  .objectFit(ImageFit.Cover)
+                  .borderRadius(RADIUS_MD).backgroundColor(GRAY_100)
+              } else {
+                Column().width(96).aspectRatio(0.72)
+                  .borderRadius(RADIUS_MD).backgroundColor(GRAY_100)
+              }
+              Text(c.title.length > 0 ? c.title : c.id)
+                .fontSize(11).fontColor(GRAY_900).width(96)
+                .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+                .margin({ top: 4 })
+            }
+            .width(96)
+            .onClick(() => {
+              this.loadDetail(c.id);
+            })
+          }, (c: Comic) => `rc#${c.id}`)
+        }
+      }
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
+      .align(Alignment.Start)
+      .width('100%')
+    }
+    .width('100%').alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  body() {
+    Scroll() {
+      Column({ space: SPACE_4 }) {
+        if (this.hasDetail) {
+          this.infoSection(this.detail)
+          this.actionRow()
+          this.metaRow(this.detail)
+        }
+        if (this.tags.length > 0) {
+          this.tagSection()
+        }
+        if (this.hasDetail && this.detail.description.length > 0) {
+          Column({ space: SPACE_2 }) {
+            Text('简介').fontSize(FS_CAPTION).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
+            Text(this.detail.description).fontSize(FS_BODY).fontColor(GRAY_900).lineHeight(21)
+              .width('100%')
+          }
+          .width('100%').alignItems(HorizontalAlign.Start)
+        }
+        if (this.chapters.length > 0) {
+          this.chapterSection()
+        }
+        if (this.recommend.length > 0) {
+          this.recommendSection()
+        }
+      }
+      .width('100%').padding({ left: SPACE_3, right: SPACE_3, bottom: SPACE_4 })
+      .alignItems(HorizontalAlign.Start)
+    }
+    .scrollBar(BarState.Off)
+    .align(Alignment.Top)
+    .width('100%').layoutWeight(1)
+  }
+
+  build() {
+    Stack() {
+      Column() {
+        this.header()
+
+      if (this.loading) {
+        Column({ space: 10 }) {
+          LoadingProgress().width(36).height(36).color(PRIMARY)
+          Text('加载中...').fontSize(FS_SMALL).fontColor(MUTED_FG)
+        }
+        .width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
+      } else if (this.errorMsg.length > 0) {
+        Column({ space: 12 }) {
+          Text('加载失败').fontSize(FS_SMALL).fontColor(ERROR)
+          Text(this.errorMsg).fontSize(FS_SMALL).fontColor(MUTED_FG)
+            .maxLines(4).textOverflow({ overflow: TextOverflow.Ellipsis })
+            .textAlign(TextAlign.Center).padding({ left: 24, right: 24 })
+          Row() {
+            Text('重试').fontSize(FS_SMALL).fontColor(CARD)
+          }
+          .height(32).padding({ left: 16, right: 16 }).borderRadius(16)
+          .backgroundColor(PRIMARY).justifyContent(FlexAlign.Center)
+          .onClick(() => {
+            this.reload();
+          })
+        }
+        .width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
+      } else {
+        this.body()
+      }
+      }
+      .width('100%').height('100%').backgroundColor(BG)
+
+      // 网络章节阅读器(覆盖在详情之上)
+      if (this.readerVisible && this.readerChapter !== null) {
+        ReaderPage({
+          chapterId: 1,
+          externalChapter: this.readerChapter,
+          hasPrevChapter: this.readerChapterIndex() > 0,
+          hasNextChapter: this.readerChapterIndex() >= 0
+            && this.readerChapterIndex() < this.chapters.length - 1,
+          onSwitchChapter: this.switchReaderChapter,
+          remoteLoader: this.loadReaderPage,
+          initialPage: this.readerStartPage,
+          onProgress: this.onReaderProgress,
+          onBack: (): void => {
+            this.readerVisible = false;
+            // 退出阅读后释放图片内存缓存, 并刷新进度显示
+            comicReadService.clearCache();
+            this.progress = readHistoryService.find(this.sourceKey, this.currentId);
+          }
+        })
+          .width('100%').height('100%')
+      }
+    }
+    .width('100%').height('100%')
+  }
+}
+
+/** ComicChapters(扁平或分组) -> 扁平章节项 */
+function buildChapters(d: ComicDetails): ChapterItem[] {
+  const out: ChapterItem[] = [];
+  if (d.chapters !== null) {
+    d.chapters.allChapters().forEach((title: string, id: string) => {
+      const item = new ChapterItem();
+      item.id = id;
+      item.title = title;
+      out.push(item);
+    });
+  }
+  // 部分源不给章节列表(整本即一章, 如 e-hentai 只返回 maxPage):
+  // 按原版语义补一个隐式章节, id 留空 -> 阅读时 ep 传 null
+  if (out.length === 0) {
+    const item = new ChapterItem();
+    item.id = '';
+    item.title = '全一話';
+    out.push(item);
+  }
+  return out;
+}
+
+/** Map<命名空间, 标签[]> -> 展示用标签(超出上限截断) */
+function buildTags(d: ComicDetails): TagItem[] {
+  const out: TagItem[] = [];
+  d.tags.forEach((values: string[], ns: string) => {
+    for (let i = 0; i < values.length; i++) {
+      if (out.length >= MAX_TAGS) {
+        return;
+      }
+      const item = new TagItem();
+      const v = values[i];
+      item.text = ns.length > 0 ? `${ns}: ${v}` : v;
+      out.push(item);
+    }
+  });
+  return out;
+}

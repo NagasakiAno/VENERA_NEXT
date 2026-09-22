@@ -1,0 +1,6 @@
+{
+  "name": "libentry.so",
+  "types": "./index.d.ts",
+  "version": "1.0.0",
+  "description": "VeneraNext JSVM 运行时 (JS 漫画源执行引擎)"
+}
