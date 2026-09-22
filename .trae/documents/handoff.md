@@ -10,7 +10,8 @@
 Flutter 版 Venera 1.6.3 → HarmonyOS NEXT(ArkTS) 的移植工程 `VeneraNextNew`。
 **阶段 0/1/2 已跑通，阶段 3（详情 → 章节 → 阅读器 → 图片管道）已打通并在真机验证通过**；本轮集中修掉了 4 个「源在真机上跑不通」的缺陷（详见 §4）。下一步是阶段 3 收尾 + 阶段 4（收藏/本地）。
 
-**注意：本目录不是 git 仓库**（`git rev-parse` 报 not a repository）。换设备 = 手工拷贝整个 `VENERA` 目录。
+**仓库已上线**：<https://github.com/NagasakiAno/VENERA_NEXT.git>（公开，`main` 分支）。
+**Git 仓库根 = `VeneraNextNew/`**（按约定只推这个工程，不含 `venera-master/`、旧迭代、归档、原型）。首个提交 `a0da564`（94 文件）。
 
 ---
 
@@ -23,7 +24,8 @@ Flutter 版 Venera 1.6.3 → HarmonyOS NEXT(ArkTS) 的移植工程 `VeneraNextNe
 | SDK | target/compatibleSdkVersion `26.0.0` |
 | 测试设备 | `HUAWEI Pura X Max`（宽屏折叠态，2584×1828 px） |
 | 构建/部署工具 | `devecocli`（devEco CLI） |
-| 签名 | `VeneraNextNew/signing/`（build-profile.json5 里是绝对路径，**换设备后若用户名/盘符不同需重新生成或改路径**） |
+| Git 远端 | `origin` = <https://github.com/NagasakiAno/VENERA_NEXT.git>（公开），分支 `main` 已跟踪 |
+| 签名 | 本地 `VeneraNextNew/signing/`（**已 gitignore，不入库**）。仓库里的 `build-profile.json5` 是**脱敏版**，详见 §2.1 |
 
 ### 目录角色（别改错地方）
 
@@ -54,6 +56,44 @@ devecocli log --device "HUAWEI Pura X Max" --bundle-name com.venera.next --keywo
 devecocli ui layout --device "HUAWEI Pura X Max" --depth 6 --mode simplified
 devecocli ui click 1526 754 --device "HUAWEI Pura X Max"
 ```
+
+### 2.1 Git 与推送
+
+```powershell
+# 工作目录 = VeneraNextNew
+git status -sb
+git add <具体文件>          # 别用 git add -A, 避免误加签名/产物
+git commit -m "..."         # 或 -F <消息文件>, 注意 PowerShell 不支持 heredoc
+git push -u origin main
+```
+
+**关键约束（下次推送别再踩）**：
+
+- **沙箱内访问 github.com 不通**（实测 `curl https://baidu.com` 200 / `curl https://github.com` 000）。
+  → 凡涉及 github 的命令（`ls-remote` / `push`）都必须走**需审批模式**（`requires_approval=true`）才能出沙箱，否则报
+  `Failed to connect to github.com port 443`。
+- 出网会抖：连接偶发超时，**重试即可**（实测第 3 次成功）。
+- 认证：系统级 `credential.helper=manager`（GCM），首次可能弹 GitHub 登录窗口。
+- 提交身份**未改全局 config**，用 per-command 指定：
+  `git -c user.name=NagasakiAno -c user.email=NagasakiAno@users.noreply.github.com commit ...`
+
+### 2.2 build-profile.json5 的「提交脱敏 / 本地真实」双份约定
+
+公开仓库不能带本地路径与口令，但本地构建又必须能签名，所以这样处理：
+
+- `.gitignore` 忽略 `signing/`、`*.p12`、`*.p7b`、`*.cer`、`*.csr`（**密钥永不入库**）。
+- **提交进仓库的是脱敏版**：`signingConfigs[].material` 各项为空串（含注释说明如何自行生成）。
+- **本地工作区保留真实签名**（`storeFile` 指向 `signing/VeneraNext.p12` 等），并已执行
+  `git update-index --skip-worktree build-profile.json5` →
+  于是 `git status` 干净、`git add -A` 也不会把真实签名提交上去。
+- 若以后**确实需要**改动这个文件的仓库版本：
+
+```powershell
+git update-index --no-skip-worktree build-profile.json5
+# 改完、提交后再重新 --skip-worktree
+```
+
+- 换设备后：clone 下来的是脱敏版，需自行生成签名（`devecocli signature generate --product default`）
 
 **日志关键字约定**（排查时直接按这些 grep）：
 
@@ -217,8 +257,10 @@ devecocli ui click 1526 754 --device "HUAWEI Pura X Max"
 
 ## 9. 换设备续接 Checklist
 
-1. 拷贝整个 `VENERA` 目录（无 git，建议自行打包/网盘）。
-2. 复核 `VeneraNextNew/build-profile.json5` 里 **签名材料绝对路径**（`C:/Users/RAIGLIM/...`），若新设备路径或用户名不同：改路径或 `devecocli signature generate --force`。
+1. `git clone https://github.com/NagasakiAno/VENERA_NEXT.git`（仓库根就是工程根，直接可用 DevEco 打开）。
+   上游之外的参考资产（`venera-master/` 原版源码、`src_download/` 源脚本、归档）**不在仓库里**，需要单独拷。
+2. 生成签名：`devecocli signature generate --product default`（clone 下来的是脱敏版 `build-profile.json5`，无签名材料）。
+   若沿用旧设备的签名，则把 `signing/` 一并拷过来，并按 §2.2 处理 `build-profile.json5`（本地真实版本 + `--skip-worktree`）。
 3. 连真机 → `devecocli device list`；若设备名不同，替换命令里的 `--device`。
 4. `devecocli run` 跑一次，确认能装能启（首次会全量编译，较慢）。
 5. 新会话开场把本文件发给 AI，并说明"接着 §5 P0 的 b3/b4/b5"。若会话上下文丢失，可让 AI 先读 §3 代码地图 + §8 踩坑清单再动手。
