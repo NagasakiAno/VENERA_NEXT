@@ -20,6 +20,7 @@ import { restoreImported, restoreWebFavorites } from '../utils/FileImporter';
 import { jsSourceManager } from '../services/JsSourceManager';
 import { jsRuntime } from '../runtime/JsRuntime';
 import { diskCacheManager } from '../utils/DiskCacheManager';
+import { downloadQueueStore } from '../model/DownloadQueueStore';
 import { initBreakpoints, setFoldStatus, updateWindowSize } from '../utils/Breakpoints';
 
 const DOMAIN = 0x0000;
@@ -65,6 +66,10 @@ export default class EntryAbility extends UIAbility {
     diskCacheManager.init(this.context).catch((e: Error) => {
       hilog.error(DOMAIN, TAG, '磁盘缓存初始化失败: %{public}s', `${e}`);
     });
+    // 初始化下载队列(读取持久化的下载任务)
+    downloadQueueStore.init(this.context);
+    // 初始化下载队列(读取持久化的下载任务)
+    downloadQueueStore.init(this.context);
     // 启动扫描已安装的 JS 漫画源
     jsSourceManager.scanFromFilesDir(this.context);
     // 初始化响应式断点

@@ -185,6 +185,18 @@ export class ComicReadService {
     await diskCacheManager.clear();
   }
 
+  /**
+   * 下载单张图片的原始字节（供 DownloadService 使用）。
+   * 复用 loadConfig + download 逻辑，但不写入内存缓存、不解码。
+   * 返回原始字节，调用方负责写入磁盘缓存。
+   */
+  async downloadImageBytes(sourceKey: string, comicId: string, epId: string,
+    url: string): Promise<Uint8Array | null> {
+    const cfg = await this.loadConfig(sourceKey, comicId, epId, url);
+    const target = cfg.url.length > 0 ? cfg.url : url;
+    return await this.download(target, cfg.headers);
+  }
+
   /** 读取磁盘缓存文件为 Uint8Array */
   private readDiskFile(path: string): Uint8Array | null {
     try {

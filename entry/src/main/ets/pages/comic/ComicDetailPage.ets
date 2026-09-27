@@ -12,6 +12,8 @@ import { Comic, ComicDetails } from '../../model/ComicModels';
 import { ShelfItem, ShelfChapter, ShelfSourceType } from '../../model/ShelfItem';
 import { localBookStore } from '../../model/LocalBookStore';
 import { localFavoritesStore, FavoriteItem } from '../../model/LocalFavoritesStore';
+import { downloadQueueStore, DownloadTask, DownloadStatus } from '../../model/DownloadQueueStore';
+import { downloadService } from '../../services/DownloadService';
 import { ReaderChapter, ReaderPageItem, ReaderPageType } from '../../model/ReaderModel';
 import { comicDetailService } from '../../services/ComicDetailService';
 import { comicReadService } from '../../services/ComicReadService';
@@ -379,6 +381,17 @@ export struct ComicDetailPage {
         this.toggleFavorite();
       })
 
+      Column({ space: 2 }) {
+        SymbolGlyph($r('sys.symbol.arrow_down')).fontSize(22)
+          .fontColor([GRAY_500])
+        Text('下载').fontSize(FS_SMALL).fontColor(MUTED_FG)
+      }
+      .width(72).height(48).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
+      .backgroundColor(GRAY_100)
+      .onClick(() => {
+        this.showDownloadDialog();
+      })
+
       if (this.progress !== null) {
         Column({ space: 2 }) {
           Text('继续阅读').fontSize(15).fontColor(CARD).fontWeight(FontWeight.Medium)
@@ -412,6 +425,50 @@ export struct ComicDetailPage {
       return;
     }
     this.openChapter(this.chapters[0]);
+  }
+
+  /** 下载对话框：选择下载范围 */
+  private showDownloadDialog(): void {
+    if (this.chapters.length === 0) {
+      promptAction.showToast({ message: '没有可下载的章节' });
+      return;
+    }
+    promptAction.showDialog({
+      title: '下载章节',
+      message: `共 ${this.chapters.length} 个章节，选择下载范围：`,
+      buttons: [
+        { text: '全部章节', color: '#FF4F8EF7' },
+        { text: '前5章', color: '#FF4F8EF7' },
+        { text: '取消', color: '#FF999999' }
+      ]
+    }).then((result: promptAction.ShowDialogSuccessResponse) => {
+      if (result.index === 0) {
+        this.enqueueDownload(0, this.chapters.length - 1);
+      } else if (result.index === 1) {
+        const end = Math.min(4, this.chapters.length - 1);
+        this.enqueueDownload(0, end);
+      }
+    });
+  }
+
+  /** 将指定范围的章节加入下载队列 */
+  private enqueueDownload(startIdx: number, endIdx: number): void {
+    let added = 0;
+    for (let i = startIdx; i <= endIdx; i++) {
+      const c = this.chapters[i];
+      const taskId = this.sourceKey + '|' + this.currentId + '|' + c.id;
+      const task = new DownloadTask(taskId, this.sourceKey, this.currentId, c.id,
+        c.title.length > 0 ? c.title : c.id, this.detail.title);
+      if (downloadQueueStore.addTask(task)) {
+        added++;
+      }
+    }
+    if (added > 0) {
+      promptAction.showToast({ message: `已加入下载队列 (${added} 个章节)` });
+      downloadService.startQueue();
+    } else {
+      promptAction.showToast({ message: '这些章节已在下载队列中' });
+    }
   }
 
   /** WEB 收藏条目在书架中的 id */

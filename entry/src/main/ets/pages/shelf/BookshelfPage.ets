@@ -1,11 +1,13 @@
 /**
  * VeneraNext 书架页(本地导入为主)
- * 四个子Tab: 本地 / 历史 / 追更 / 收藏
+ * 四个子Tab: 本地 / 历史 / 下载 / 收藏
  * 顶栏下方放置导入按钮; 响应式封面网格; 空态提示
  */
 import { ShelfItem, ShelfSourceType } from '../../model/ShelfItem';
 import { localBookStore } from '../../model/LocalBookStore';
 import { localFavoritesStore, FavoriteItem, FavoriteFolder } from '../../model/LocalFavoritesStore';
+import { downloadQueueStore, DownloadTask, DownloadStatus } from '../../model/DownloadQueueStore';
+import { downloadService } from '../../services/DownloadService';
 import { doImport, restoreImported, removeImported, restoreWebFavorites, persistWebFavorites } from '../../utils/FileImporter';
 import { promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
@@ -27,7 +29,7 @@ export struct BookshelfPage {
   // 顶栏 SegmentButton 状态(显式颜色适配深色模式)
   @State segOptions: SegmentButtonOptions = SegmentButtonOptions.capsule({
     buttons: [
-      { text: '本地' }, { text: '历史' }, { text: '追更' }, { text: '收藏' }
+      { text: '本地' }, { text: '历史' }, { text: '下载' }, { text: '收藏' }
     ] as SegmentButtonItemTuple,
     multiply: false,
     fontColor: GRAY_500,
@@ -43,6 +45,8 @@ export struct BookshelfPage {
   @State favCurrentFolder: string = '收藏';
   @State favItems: FavoriteItem[] = [];
   @State favShowFolderBar: boolean = false;
+  // === 下载 Tab 专属状态 ===
+  @State downloadTasks: DownloadTask[] = [];
 
   aboutToAppear(): void {
     // 订阅 store 变化, 导入/恢复/删除后刷新本地列表
@@ -60,6 +64,18 @@ export struct BookshelfPage {
       this.refreshFavState();
     });
     this.refreshFavState();
+    // 初始化下载队列 store
+    downloadQueueStore.init(ctx);
+    downloadQueueStore.subscribe(() => {
+      this.downloadTasks = downloadQueueStore.getAllTasks();
+    });
+    this.downloadTasks = downloadQueueStore.getAllTasks();
+    // 初始化下载队列 store
+    downloadQueueStore.init(ctx);
+    downloadQueueStore.subscribe(() => {
+      this.downloadTasks = downloadQueueStore.getAllTasks();
+    });
+    this.downloadTasks = downloadQueueStore.getAllTasks();
   }
 
   /** 刷新收藏 Tab 状态 */
@@ -225,18 +241,15 @@ export struct BookshelfPage {
     return `repeat(${Math.max(3, n)}, 1fr)`;
   }
 
-  /** 当前 Tab 数据 */
+  /** 当前 Tab 数据（仅 tab 0/1 使用，下载和收藏有独立 UI） */
   currentItems(): ShelfItem[] {
     const all = localBookStore.all();
     if (this.tab === 0) { // 本地
       return this.localItems;
     } else if (this.tab === 1) { // 历史(有阅读记录)
       return allWithRead(all);
-    } else if (this.tab === 2) { // 追更(全部导入书)
-      return all;
-    } else { // 收藏
-      return allFavorite(all);
     }
+    return [];
   }
 
   /** 导入栏: 管理 + 提示 + 导入 */
@@ -363,6 +376,151 @@ export struct BookshelfPage {
     .width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
   }
 
+  /** 下载状态文本 */
+  private downloadStatusText(status: DownloadStatus): string {
+    switch (status) {
+      case DownloadStatus.PENDING:
+        return '等待中';
+      case DownloadStatus.DOWNLOADING:
+        return '下载中';
+      case DownloadStatus.COMPLETED:
+        return '已完成';
+      case DownloadStatus.FAILED:
+        return '失败';
+      case DownloadStatus.PAUSED:
+        return '已暂停';
+      default:
+        return '';
+    }
+  }
+
+  /** 下载状态颜色 */
+  private downloadStatusColor(status: DownloadStatus): string {
+    switch (status) {
+      case DownloadStatus.PENDING:
+        return MUTED_FG;
+      case DownloadStatus.DOWNLOADING:
+        return PRIMARY;
+      case DownloadStatus.COMPLETED:
+        return '#FF4CAF50';
+      case DownloadStatus.FAILED:
+        return ERROR;
+      case DownloadStatus.PAUSED:
+        return '#FFFF9800';
+      default:
+        return MUTED_FG;
+    }
+  }
+
+  /** 下载任务行 */
+  @Builder
+  downloadTaskRow(task: DownloadTask) {
+    Row({ space: 12 }) {
+      Column({ space: 4 }) {
+        Text(task.comicTitle).fontSize(FS_CAPTION).fontColor(GRAY_900)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
+        Text(task.title).fontSize(FS_SMALL).fontColor(MUTED_FG)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
+        // 进度信息
+        Row({ space: 8 }) {
+          Text(this.downloadStatusText(task.status))
+            .fontSize(FS_SMALL).fontColor(this.downloadStatusColor(task.status))
+          if (task.totalImages > 0) {
+            Text(`${task.downloadedImages}/${task.totalImages}`)
+              .fontSize(FS_SMALL).fontColor(MUTED_FG)
+          }
+          if (task.errorMsg.length > 0) {
+            Text(task.errorMsg).fontSize(FS_SMALL).fontColor(ERROR)
+              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+        }
+        // 进度条
+        if (task.status === DownloadStatus.DOWNLOADING || task.status === DownloadStatus.PAUSED) {
+          Progress({ value: task.downloadedImages, total: task.totalImages > 0 ? task.totalImages : 1,
+            type: ProgressType.Linear })
+            .width('100%').color(PRIMARY).backgroundColor(GRAY_100)
+            .style({ strokeWidth: 4 })
+        }
+      }
+      .layoutWeight(1).alignItems(HorizontalAlign.Start)
+
+      // 操作按钮
+      if (task.status === DownloadStatus.DOWNLOADING) {
+        Column() {
+          SymbolGlyph($r('sys.symbol.pause')).fontSize(18).fontColor([MUTED_FG])
+        }
+        .width(36).height(36).justifyContent(FlexAlign.Center).borderRadius(18)
+        .backgroundColor(GRAY_100)
+        .onClick(() => { downloadService.pauseTask(task.id); })
+      } else if (task.status === DownloadStatus.PAUSED) {
+        Column() {
+          SymbolGlyph($r('sys.symbol.play')).fontSize(18).fontColor([PRIMARY])
+        }
+        .width(36).height(36).justifyContent(FlexAlign.Center).borderRadius(18)
+        .backgroundColor(PRIMARY_50)
+        .onClick(() => { downloadService.resumeTask(task.id); })
+      } else if (task.status === DownloadStatus.FAILED) {
+        Column() {
+          SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(18).fontColor([PRIMARY])
+        }
+        .width(36).height(36).justifyContent(FlexAlign.Center).borderRadius(18)
+        .backgroundColor(PRIMARY_50)
+        .onClick(() => { downloadService.retryTask(task.id); })
+      }
+
+      // 删除按钮
+      Column() {
+        SymbolGlyph($r('sys.symbol.trash')).fontSize(18).fontColor([ERROR])
+      }
+      .width(36).height(36).justifyContent(FlexAlign.Center).borderRadius(18)
+      .backgroundColor(GRAY_100)
+      .onClick(() => {
+        promptAction.showDialog({
+          title: '删除任务',
+          message: '确定删除下载任务"' + task.title + '"吗？',
+          buttons: [
+            { text: '取消', color: GRAY_500 },
+            { text: '删除', color: ERROR }
+          ]
+        }).then((res: promptAction.ShowDialogSuccessResponse) => {
+          if (res.index === 1) {
+            downloadQueueStore.removeTask(task.id);
+          }
+        }).catch((e: Error) => {});
+      })
+    }
+    .width('100%').padding({ left: SPACE_3, right: SPACE_3, top: 12, bottom: 12 })
+    .backgroundColor(CARD).borderRadius(RADIUS_MD)
+  }
+
+  /** 下载空态 */
+  @Builder
+  downloadEmptyView() {
+    Column({ space: 10 }) {
+      SymbolGlyph($r('sys.symbol.arrow_down')).fontSize(40).fontColor([GRAY_100])
+      Text('暂无下载任务，在漫画详情页点击下载按钮添加').fontSize(FS_SMALL).fontColor(MUTED_FG)
+    }
+    .width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
+  }
+
+  /** 下载管理顶栏 */
+  @Builder
+  downloadToolBar() {
+    Row({ space: 8 }) {
+      Text('下载管理').fontSize(FS_SMALL).fontColor(GRAY_900).fontWeight(FontWeight.Medium)
+      Blank()
+      // 清除已完成
+      if (downloadQueueStore.getStats().completed > 0) {
+        Text('清除已完成').fontSize(FS_SMALL).fontColor(PRIMARY)
+          .onClick(() => {
+            downloadQueueStore.clearCompleted();
+            promptAction.showToast({ message: '已清除完成的任务' });
+          })
+      }
+    }
+    .width('92%').margin({ top: 4, bottom: 4 })
+  }
+
   build() {
     Column() {
       // 顶栏: SegmentButton 胶囊单选(显式颜色, 深色模式可读)
@@ -386,6 +544,11 @@ export struct BookshelfPage {
         this.importBar()
       }
 
+      // 下载 tab: 下载管理顶栏
+      if (this.tab === 2) {
+        this.downloadToolBar()
+      }
+
       // 收藏 tab: 文件夹选择栏 + 管理按钮
       if (this.tab === 3) {
         Row({ space: 8 }) {
@@ -405,8 +568,20 @@ export struct BookshelfPage {
         .width('92%').margin({ top: 4, bottom: 4 })
       }
 
-      // 封面网格 / 空态
-      if (this.tab === 3) {
+      // 内容区域
+      if (this.tab === 2) {
+        // 下载 Tab: 任务列表
+        if (this.downloadTasks.length === 0) {
+          this.downloadEmptyView()
+        } else {
+          List({ space: 8 }) {
+            ForEach(this.downloadTasks, (task: DownloadTask) => {
+              ListItem() { this.downloadTaskRow(task) }
+            }, (task: DownloadTask) => task.id)
+          }
+          .width('100%').padding({ left: SPACE_3, right: SPACE_3 }).layoutWeight(1)
+        }
+      } else if (this.tab === 3) {
         // 收藏 Tab: 使用 FavoriteItem 网格
         if (this.favItems.length === 0) {
           this.favEmptyView()
@@ -421,7 +596,7 @@ export struct BookshelfPage {
           .width('100%').padding({ left: SPACE_3, right: SPACE_3 }).layoutWeight(1)
         }
       } else {
-        // 其他 Tab: 使用 ShelfItem 网格
+        // 本地/历史 Tab: 使用 ShelfItem 网格
         if (this.currentItems().length === 0) {
           this.emptyView()
         } else {
@@ -445,16 +620,6 @@ function allWithRead(all: ShelfItem[]): ShelfItem[] {
   const out: ShelfItem[] = [];
   for (let i = 0; i < all.length; i++) {
     if (all[i].lastReadPage > 0) {
-      out.push(all[i]);
-    }
-  }
-  return out;
-}
-
-function allFavorite(all: ShelfItem[]): ShelfItem[] {
-  const out: ShelfItem[] = [];
-  for (let i = 0; i < all.length; i++) {
-    if (all[i].isFavorite) {
       out.push(all[i]);
     }
   }

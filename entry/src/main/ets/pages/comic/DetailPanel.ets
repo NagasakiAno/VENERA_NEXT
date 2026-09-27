@@ -258,7 +258,12 @@ export struct DetailPanel {
   @Builder
   webActions() {
     Row({ space: 10 }) {
-      this.webActionBtn($r('sys.symbol.arrow_down'), '下载')
+      Column({ space: 2 }) {
+        SymbolGlyph($r('sys.symbol.arrow_down')).fontSize(20).fontColor([GRAY_500])
+        Text('下载').fontSize(FS_SMALL).fontColor(MUTED_FG)
+      }
+      .width(72).height(56).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD).backgroundColor(GRAY_100)
+      .onClick(() => { promptAction.showToast({ message: '请从漫画源详情页下载' }); })
       this.webActionBtn($r('sys.symbol.bolt'), '评论')
       this.webActionBtn($r('sys.symbol.square_grid_2x2'), '分享')
     }.width('100%').margin({ top: SPACE_3 })
