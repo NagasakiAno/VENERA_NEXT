@@ -15,6 +15,7 @@ import { ReaderChapter, ReaderPageItem, ReaderPageType } from '../model/ReaderMo
 import { localBookStore } from '../model/LocalBookStore';
 import { parseTxt } from './parsers/TxtParser';
 import { parseEpub, extractEpubCover } from './parsers/EpubParser';
+import { parseCbz, extractCbzCover } from './parsers/CbzParser';
 
 const DOMAIN = 0x0000;
 const TAG = 'FileImporter';
@@ -143,7 +144,7 @@ export async function doImport(context: common.UIAbilityContext): Promise<ShelfI
   try {
     const pickerInst = new picker.DocumentViewPicker(context);
     const opts = new picker.DocumentSelectOptions();
-    opts.fileSuffixFilters = ['.txt', '.epub'];
+    opts.fileSuffixFilters = ['.txt', '.epub', '.cbz'];
     opts.maxSelectNumber = 1;
     const uris: string[] = await pickerInst.select(opts);
     if (uris.length === 0) {
@@ -151,7 +152,7 @@ export async function doImport(context: common.UIAbilityContext): Promise<ShelfI
     }
     const uri = uris[0];
     const ext = extOf(uri);
-    if (ext !== '.txt' && ext !== '.epub') {
+    if (ext !== '.txt' && ext !== '.epub' && ext !== '.cbz') {
       hilog.warn(DOMAIN, TAG, 'unsupported ext %{public}s', ext);
       return null;
     }
@@ -174,6 +175,19 @@ export async function doImport(context: common.UIAbilityContext): Promise<ShelfI
       const ch = parseTxt(destPath, title);
       bookData = [ch];
       chapters = [new ShelfChapter('正文', ch.pages.length)];
+    } else if (ext === '.cbz') {
+      const unzipDir = booksDir + '/' + fileId + '_cbz';
+      const ch = await parseCbz(destPath, unzipDir, title);
+      bookData = [ch];
+      chapters = [new ShelfChapter('正文', ch.pages.length)];
+      // 提取 CBZ 封面(第一张图)并拷贝为独立文件
+      const extracted = extractCbzCover(unzipDir);
+      if (extracted.length > 0) {
+        const coverFile = booksDir + '/' + fileId + '_cover' + extOf(extracted);
+        fs.copyFileSync(extracted, coverFile, 0);
+        cover = 'file://' + coverFile;
+        coverPath = coverFile;
+      }
     } else {
       const unzipDir = booksDir + '/' + fileId + '_epub';
       const ch = await parseEpub(destPath, unzipDir, title);
@@ -365,6 +379,19 @@ export async function ensureBookData(it: ShelfItem): Promise<void> {
           it.cover = 'file://' + coverPath;
         }
       }
+    } else if (fmt === 'cbz' || fmt === '.cbz') {
+      const dir = it.sandboxPath.substring(0, it.sandboxPath.lastIndexOf('.')) + '_cbz';
+      const ch = await parseCbz(it.sandboxPath, dir, it.title);
+      it.bookData = [ch];
+      it.chapters = [new ShelfChapter('正文', ch.pages.length)];
+      hilog.info(DOMAIN, TAG, 'ensureBookData cbz pages=%{public}d', ch.pages.length);
+      // 补封面(恢复后 cover 为 Resource 时首次解析)
+      if (typeof it.cover !== 'string') {
+        const coverPath = extractCbzCover(dir);
+        if (coverPath.length > 0) {
+          it.cover = 'file://' + coverPath;
+        }
+      }
     } else {
       // 未知格式 -> 占位章节
       it.bookData = [placeholderChapter(it.title)];
@@ -427,10 +454,13 @@ export function removeImported(context: common.Context, it: ShelfItem): void {
     } catch (e) {
       hilog.warn(DOMAIN, TAG, 'remove unlink fail %{public}s', it.sandboxPath);
     }
-    // 2. 删除 EPUB 解压目录
+    // 2. 删除解压目录(EPUB/CBZ)
     const fmt = it.fileFormat.toLowerCase();
     if (fmt === 'epub' || fmt === '.epub') {
       const dir = it.sandboxPath.substring(0, it.sandboxPath.lastIndexOf('.')) + '_epub';
+      deleteDirRecursive(dir);
+    } else if (fmt === 'cbz' || fmt === '.cbz') {
+      const dir = it.sandboxPath.substring(0, it.sandboxPath.lastIndexOf('.')) + '_cbz';
       deleteDirRecursive(dir);
     }
   }

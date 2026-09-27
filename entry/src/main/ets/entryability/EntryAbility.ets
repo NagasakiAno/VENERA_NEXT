@@ -60,6 +60,8 @@ export default class EntryAbility extends UIAbility {
     restoreImported(this.context);
     // 恢复 WEB 收藏(书架收藏页签, filesDir/web_favorites.json)
     restoreWebFavorites(this.context);
+    // 恢复 WEB 收藏(书架收藏页签, filesDir/web_favorites.json)
+    restoreWebFavorites(this.context);
     // 启动扫描已安装的 JS 漫画源
     jsSourceManager.scanFromFilesDir(this.context);
     // 初始化响应式断点

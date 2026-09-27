@@ -68,6 +68,7 @@ export struct DetailPanel {
       }
       .width(56).height(48).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD).backgroundColor(GRAY_100)
       .onClick(() => { this.toggleFavorite(item); })
+      .onClick(() => { this.toggleFavorite(item); })
 
       if (item.lastReadPage > 0) {
         Column() {
