@@ -54,6 +54,12 @@ export class ShelfItem {
   initLoaded: boolean;        // 是否已从沙箱路径惰性解析(persist 恢复时 false)
   sandboxPath: string;        // 沙箱内的原文件路径(持久化恢复后按此重解析)
 
+  // === 用户自定义覆盖(详情页编辑, 本地书; 持久化于 imported.json) ===
+  /** 自定义描述(非空时覆盖 description 展示) */
+  customDescription: string;
+  /** 自定义 TAG(非空时覆盖 tags 展示) */
+  customTags: string[];
+
   constructor(id: string, title: string, cover: Resource | string, author: string,
     description: string, tags: string[], sourceType: ShelfSourceType,
     chapters: ShelfChapter[], isFavorite: boolean = false,
@@ -80,5 +86,7 @@ export class ShelfItem {
     this.bookData = bookData;
     this.initLoaded = initLoaded;
     this.sandboxPath = sandboxPath;
+    this.customDescription = '';
+    this.customTags = [];
   }
 }

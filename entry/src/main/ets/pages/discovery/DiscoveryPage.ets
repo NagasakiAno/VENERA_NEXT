@@ -9,7 +9,6 @@ import { promptAction, router, ChipGroup, ChipGroupItemOptions, ChipSize, uiMate
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ExplorePageInfo } from '../../model/sources/ComicSourceMeta';
 import { exploreService, ExploreBatch, ExploreComic, ExplorePart } from '../../services/ExploreService';
-import { ComicDetailPage } from '../comic/ComicDetailPage';
 import { PRIMARY, GRAY_100, GRAY_700, GRAY_900,
   CARD, BG, MUTED_FG, ERROR, RADIUS_MD, SPACE_2, SPACE_3, SPACE_4,
   FS_TITLE, FS_SECTION, FS_CAPTION, FS_SMALL } from '../../utils/Design';
@@ -28,6 +27,9 @@ const TITLE_BAR_H = TITLE_ROW_H + TAB_ROW_H;
 @Component
 export struct DiscoveryPage {
   onOpenSearch: () => void = () => {};
+  /** 打开在线漫画详情(由窗口根层的 ComicDetailSheet 呈现) */
+  onOpenComic: (sourceKey: string, sourceName: string, comicId: string) => void =
+    (_s: string, _n: string, _i: string) => {};
 
   @State pages: ExplorePageInfo[] = [];
   @State currentUid: string = '';
@@ -43,11 +45,6 @@ export struct DiscoveryPage {
   /** 发现页选择 ChipGroup */
   @State chipItems: ChipGroupItemOptions[] = [];
   @State chipIndex: number = 0;
-  /** 详情覆盖层 */
-  @State detailVisible: boolean = false;
-  private detailSourceKey: string = '';
-  private detailSourceName: string = '';
-  private detailComicId: string = '';
 
   /** 每行格子下标(用于补齐最后一行) */
   private colIndexes: number[] = [0, 1, 2];
@@ -186,10 +183,7 @@ export struct DiscoveryPage {
     if (c.id.length === 0) {
       return;
     }
-    this.detailSourceKey = c.sourceKey;
-    this.detailSourceName = c.sourceName;
-    this.detailComicId = c.id;
-    this.detailVisible = true;
+    this.onOpenComic(c.sourceKey, c.sourceName, c.id);
   }
 
   /** 打开分类页 */
@@ -460,19 +454,6 @@ export struct DiscoveryPage {
       .backgroundColor(BG)
       // 横屏时让材质条延伸到左右安全区, 不被截断
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.START, SafeAreaEdge.END])
-
-      // 详情覆盖层(与搜索/分类共用同一个详情组件)
-      if (this.detailVisible) {
-        ComicDetailPage({
-          sourceKey: this.detailSourceKey,
-          sourceName: this.detailSourceName,
-          comicId: this.detailComicId,
-          onBack: (): void => {
-            this.detailVisible = false;
-          }
-        })
-          .width('100%').height('100%')
-      }
     }
     .width('100%').height('100%')
   }

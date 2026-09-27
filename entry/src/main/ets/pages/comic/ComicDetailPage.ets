@@ -5,14 +5,18 @@
  * 当前服务于搜索框的「按 ID 直达」; 章节阅读(comic.loadEp + 图片管道)属后续阶段。
  */
 import { promptAction } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
 import { image } from '@kit.ImageKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { Comic, ComicDetails } from '../../model/ComicModels';
+import { ShelfItem, ShelfChapter, ShelfSourceType } from '../../model/ShelfItem';
+import { localBookStore } from '../../model/LocalBookStore';
 import { ReaderChapter, ReaderPageItem, ReaderPageType } from '../../model/ReaderModel';
 import { comicDetailService } from '../../services/ComicDetailService';
 import { comicReadService } from '../../services/ComicReadService';
 import { readHistoryService, ReadHistoryItem } from '../../services/ReadHistoryService';
-import { ReaderPage } from './ReaderPage';
+import { persistWebFavorites } from '../../utils/FileImporter';
+import { ReaderSession } from './ReaderSession';
 import { PRIMARY, PRIMARY_50, SUCCESS, GRAY_100, GRAY_500, GRAY_900, CARD, BG, MUTED_FG, ERROR,
   RADIUS_SM, RADIUS_MD, RADIUS_LG, SPACE_2, SPACE_3, SPACE_4,
   FS_TITLE, FS_SECTION, FS_BODY, FS_CAPTION, FS_SMALL } from '../../utils/Design';
@@ -35,10 +39,17 @@ class TagItem {
 
 @Component
 export struct ComicDetailPage {
-  sourceKey: string = '';
+  /** 呈现容器(ComicDetailSheet)换书时同步并自动重载 */
+  @Prop @Watch('onParamsChanged') sourceKey: string = '';
   sourceName: string = '';
-  comicId: string = '';
-  onBack: () => void = () => {};
+  @Prop @Watch('onParamsChanged') comicId: string = '';
+
+  /** 外部换书(半模态复用同一实例): 参数变化时重新加载 */
+  onParamsChanged(): void {
+    if (this.comicId.length > 0 && this.comicId !== this.currentId) {
+      this.loadDetail(this.comicId);
+    }
+  }
 
   /** 推荐位跳转会替换当前 ID, 因此用内部状态而非直接读 prop */
   @State currentId: string = '';
@@ -50,14 +61,15 @@ export struct ComicDetailPage {
   @State recommend: Comic[] = [];
   @State loading: boolean = true;
   @State errorMsg: string = '';
-  /** 阅读器覆盖层(网络章节) */
-  @State readerVisible: boolean = false;
+  /** 当前阅读章节(发布到全局阅读器展示) */
   @State readerChapter: ReaderChapter | null = null;
   @State chapterLoading: boolean = false;
   /** 打开的章节要跳到的页码(0 基), 用于续读 */
   @State readerStartPage: number = 0;
   /** 本漫画的阅读进度(无则 null) */
   @State progress: ReadHistoryItem | null = null;
+  /** 是否已收藏到书架(WEB 收藏快照) */
+  @State isFaved: boolean = false;
   /** 当前阅读章节的图片地址(与 readerChapter.pages 下标对齐) */
   private readerUrls: string[] = [];
   private readerEpId: string = '';
@@ -94,8 +106,9 @@ export struct ComicDetailPage {
         this.sourceKey, id, this.errorMsg);
     } finally {
       this.loading = false;
-      // 详情就绪后读取该漫画的阅读进度
+      // 详情就绪后读取该漫画的阅读进度与收藏状态
       this.progress = readHistoryService.find(this.sourceKey, this.currentId);
+      this.isFaved = localBookStore.findById(this.webFavId()) !== null;
     }
   }
 
@@ -178,7 +191,8 @@ export struct ComicDetailPage {
     try {
       const ok = await this.openChapterAt(c);
       if (ok) {
-        this.readerVisible = true;
+        // 发布到全局阅读器(Index 窗口根层挂载, 保证全屏)
+        this.publishReaderSession(this.readerStartPage);
       }
     } finally {
       this.chapterLoading = false;
@@ -227,6 +241,8 @@ export struct ComicDetailPage {
       const ok = await this.openChapterAt(this.chapters[next]);
       if (ok) {
         hilog.info(DOMAIN, TAG, '切换到章节 %{public}s', this.chapters[next].title);
+        // 重新发布: 新 chapter 对象触发 ReaderPage 的 @Watch 重置页状态
+        this.publishReaderSession(0);
       }
       return ok;
     };
@@ -241,34 +257,32 @@ export struct ComicDetailPage {
         this.readerUrls[index]);
     };
 
+  /** 把当前阅读内容发布到全局阅读器(由 Index 在窗口根层挂载, 保证全屏) */
+  private publishReaderSession(startPage: number): void {
+    const idx = this.readerChapterIndex();
+    const s = new ReaderSession();
+    s.chapter = this.readerChapter;
+    s.hasPrev = idx > 0;
+    s.hasNext = idx >= 0 && idx < this.chapters.length - 1;
+    s.startPage = startPage;
+    s.loader = this.loadReaderPage;
+    s.switcher = this.switchReaderChapter;
+    s.onProgress = this.onReaderProgress;
+    s.onClose = (): void => {
+      // 退出阅读后释放图片内存缓存, 并刷新进度显示
+      comicReadService.clearCache();
+      this.progress = readHistoryService.find(this.sourceKey, this.currentId);
+    };
+    ReaderSession.publish(s);
+  }
+
   // ---------------------------------------------------------------- UI
 
+  /** 分区标题(与本地详情 DetailPanel 同款) */
   @Builder
-  header() {
-    Row({ space: SPACE_2 }) {
-      Row() {
-        SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(18).fontColor([GRAY_500])
-      }
-      .width(36).height(36).borderRadius(18).backgroundColor(GRAY_100)
-      .justifyContent(FlexAlign.Center)
-      .onClick(() => {
-        this.onBack();
-      })
-
-      Column({ space: 2 }) {
-        Text(this.hasDetail ? this.detail.title : '漫画详情')
-          .fontSize(FS_TITLE).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%')
-        Text(this.sourceName.length > 0 ? `${this.sourceName} · ${this.currentId}` : this.currentId)
-          .fontSize(11).fontColor(MUTED_FG)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%')
-      }
-      .layoutWeight(1).alignItems(HorizontalAlign.Start)
-    }
-    .width('100%').alignItems(VerticalAlign.Center)
-    .padding({ left: SPACE_3, right: SPACE_3, top: SPACE_2, bottom: SPACE_2 })
+  sectionTitle(title: string) {
+    Text(title).fontSize(FS_SECTION).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
+      .width('100%').margin({ top: SPACE_4 })
   }
 
   @Builder
@@ -316,6 +330,7 @@ export struct ComicDetailPage {
       .layoutWeight(1).alignItems(HorizontalAlign.Start)
     }
     .width('100%').alignItems(VerticalAlign.Top)
+    .margin({ top: SPACE_3 })
   }
 
   /** 数据行: 赞 / 更新时间 / 章节数 */
@@ -345,13 +360,14 @@ export struct ComicDetailPage {
   actionRow() {
     Row({ space: 10 }) {
       Column({ space: 2 }) {
-        SymbolGlyph($r('sys.symbol.heart')).fontSize(22).fontColor([GRAY_500])
-        Text('收藏').fontSize(FS_SMALL).fontColor(MUTED_FG)
+        SymbolGlyph($r('sys.symbol.heart')).fontSize(22)
+          .fontColor([this.isFaved ? '#FFE8455E' : GRAY_500])
+        Text(this.isFaved ? '已收藏' : '收藏').fontSize(FS_SMALL).fontColor(MUTED_FG)
       }
       .width(72).height(48).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
       .backgroundColor(GRAY_100)
       .onClick(() => {
-        promptAction.showToast({ message: '收藏功能开发中' });
+        this.toggleFavorite();
       })
 
       if (this.progress !== null) {
@@ -389,20 +405,54 @@ export struct ComicDetailPage {
     this.openChapter(this.chapters[0]);
   }
 
+  /** WEB 收藏条目在书架中的 id */
+  private webFavId(): string {
+    return 'web_' + this.sourceKey + '_' + this.currentId;
+  }
+
+  /** 收藏/取消收藏: 详情快照入书架(收藏页签可见), 落盘 web_favorites.json */
+  private toggleFavorite(): void {
+    if (!this.hasDetail) {
+      return;
+    }
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    const id = this.webFavId();
+    if (this.isFaved) {
+      localBookStore.removeItem(id);
+      this.isFaved = false;
+      persistWebFavorites(ctx, localBookStore.all());
+      promptAction.showToast({ message: '已取消收藏' });
+      return;
+    }
+    const chs: ShelfChapter[] = [];
+    for (let i = 0; i < this.chapters.length; i++) {
+      chs.push(new ShelfChapter(this.chapters[i].title, 0));
+    }
+    const tagArr: string[] = [];
+    for (let i = 0; i < this.tags.length; i++) {
+      tagArr.push(this.tags[i].text);
+    }
+    localBookStore.addItem(new ShelfItem(id, this.detail.title, this.detail.cover,
+      this.detail.uploader, this.detail.description, tagArr, ShelfSourceType.WEB, chs, true,
+      0, '', 0, '', [], '', null, false, ''));
+    this.isFaved = true;
+    persistWebFavorites(ctx, localBookStore.all());
+    promptAction.showToast({ message: '已收藏到书架' });
+  }
+
   @Builder
   tagSection() {
-    Column({ space: SPACE_2 }) {
-      Text(`标签 (${this.tags.length})`)
-        .fontSize(FS_CAPTION).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
+    Column() {
+      this.sectionTitle('标签')
       Flex({ wrap: FlexWrap.Wrap }) {
         ForEach(this.tags, (t: TagItem) => {
-          Text(t.text).fontSize(FS_SMALL).fontColor(GRAY_900)
+          Text(t.text).fontSize(FS_SMALL).fontColor(GRAY_500)
             .padding({ left: 10, right: 10, top: 4, bottom: 4 })
             .backgroundColor(GRAY_100).borderRadius(12)
             .margin({ right: 6, bottom: 6 })
         }, (t: TagItem, i: number) => `tag#${i}#${t.text}`)
       }
-      .width('100%')
+      .width('100%').margin({ top: SPACE_2 })
     }
     .width('100%').alignItems(HorizontalAlign.Start)
   }
@@ -445,10 +495,8 @@ export struct ComicDetailPage {
 
   @Builder
   chapterSection() {
-    Column({ space: SPACE_2 }) {
-      Text(`章节 (${this.chapters.length})`)
-        .fontSize(FS_CAPTION).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
-        .width('100%')
+    Column() {
+      this.sectionTitle('章节')
       Column() {
         ForEach(this.chapters, (c: ChapterItem, idx: number) => {
           this.chapterRow(c, idx)
@@ -459,15 +507,15 @@ export struct ComicDetailPage {
       }
       .width('100%').padding({ left: SPACE_3, right: SPACE_3 })
       .backgroundColor(CARD).borderRadius(RADIUS_LG)
+      .margin({ top: SPACE_2 })
     }
     .width('100%').alignItems(HorizontalAlign.Start)
   }
 
   @Builder
   recommendSection() {
-    Column({ space: SPACE_2 }) {
-      Text('相关推荐')
-        .fontSize(FS_CAPTION).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
+    Column() {
+      this.sectionTitle('相关推荐')
       Scroll() {
         Row({ space: SPACE_2 }) {
           ForEach(this.recommend, (c: Comic) => {
@@ -496,7 +544,7 @@ export struct ComicDetailPage {
       .scrollable(ScrollDirection.Horizontal)
       .scrollBar(BarState.Off)
       .align(Alignment.Start)
-      .width('100%')
+      .width('100%').margin({ top: SPACE_2 })
     }
     .width('100%').alignItems(HorizontalAlign.Start)
   }
@@ -514,10 +562,10 @@ export struct ComicDetailPage {
           this.tagSection()
         }
         if (this.hasDetail && this.detail.description.length > 0) {
-          Column({ space: SPACE_2 }) {
-            Text('简介').fontSize(FS_CAPTION).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
+          Column() {
+            this.sectionTitle('简介')
             Text(this.detail.description).fontSize(FS_BODY).fontColor(GRAY_900).lineHeight(21)
-              .width('100%')
+              .width('100%').margin({ top: SPACE_2 })
           }
           .width('100%').alignItems(HorizontalAlign.Start)
         }
@@ -539,8 +587,6 @@ export struct ComicDetailPage {
   build() {
     Stack() {
       Column() {
-        this.header()
-
       if (this.loading) {
         Column({ space: 10 }) {
           LoadingProgress().width(36).height(36).color(PRIMARY)
@@ -568,28 +614,6 @@ export struct ComicDetailPage {
       }
       }
       .width('100%').height('100%').backgroundColor(BG)
-
-      // 网络章节阅读器(覆盖在详情之上)
-      if (this.readerVisible && this.readerChapter !== null) {
-        ReaderPage({
-          chapterId: 1,
-          externalChapter: this.readerChapter,
-          hasPrevChapter: this.readerChapterIndex() > 0,
-          hasNextChapter: this.readerChapterIndex() >= 0
-            && this.readerChapterIndex() < this.chapters.length - 1,
-          onSwitchChapter: this.switchReaderChapter,
-          remoteLoader: this.loadReaderPage,
-          initialPage: this.readerStartPage,
-          onProgress: this.onReaderProgress,
-          onBack: (): void => {
-            this.readerVisible = false;
-            // 退出阅读后释放图片内存缓存, 并刷新进度显示
-            comicReadService.clearCache();
-            this.progress = readHistoryService.find(this.sourceKey, this.currentId);
-          }
-        })
-          .width('100%').height('100%')
-      }
     }
     .width('100%').height('100%')
   }

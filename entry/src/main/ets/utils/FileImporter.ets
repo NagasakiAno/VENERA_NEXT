@@ -29,6 +29,28 @@ interface ImportedMeta {
   lastReadPage: number;
   /** 独立拷贝的封面文件沙箱路径(恢复时直接引用, 不重新解析) */
   coverPath: string;
+  /** 详情页自定义描述(可选, 兼容旧记录) */
+  customDescription?: string;
+  /** 详情页自定义 TAG(可选, 兼容旧记录) */
+  customTags?: string[];
+  /** 是否收藏(可选, 兼容旧记录) */
+  isFavorite?: boolean;
+}
+
+/** WEB 收藏条目元信息(filesDir/web_favorites.json, 详情快照) */
+interface WebFavMeta {
+  id: string;
+  title: string;
+  cover: string;
+  author: string;
+  description: string;
+  tags: string[];
+  /** 章节名列表(恢复时页数固定 0) */
+  chapters: string[];
+}
+
+function webFavFile(context: common.Context): string {
+  return context.filesDir + '/web_favorites.json';
 }
 
 /** 元信息文件路径(filesDir/imported.json, 纯文件存储, 不依赖 Preferences 时序) */
@@ -187,14 +209,20 @@ function buildMeta(context: common.Context, item: ShelfItem, coverPath: string):
   const arr = readMeta(context);
   for (let i = 0; i < arr.length; i++) {
     if (arr[i].id === item.id) {
+      // 重导入同 id: 保留已有收藏状态与自定义字段
+      const prev = arr[i];
       arr[i] = { id: item.id, title: item.title, fileFormat: item.fileFormat,
-        filePath: item.sandboxPath, lastReadPage: item.lastReadPage, coverPath: coverPath };
+        filePath: item.sandboxPath, lastReadPage: item.lastReadPage, coverPath: coverPath,
+        isFavorite: prev.isFavorite ?? false,
+        customDescription: prev.customDescription ?? '',
+        customTags: prev.customTags ?? [] };
       return arr;
     }
   }
   arr.push({
     id: item.id, title: item.title, fileFormat: item.fileFormat,
-    filePath: item.sandboxPath, lastReadPage: item.lastReadPage, coverPath: coverPath
+    filePath: item.sandboxPath, lastReadPage: item.lastReadPage, coverPath: coverPath,
+    isFavorite: false
   });
   return arr;
 }
@@ -218,8 +246,73 @@ export function restoreImported(context: common.Context): void {
       [m.fileFormat.toUpperCase()], ShelfSourceType.LOCAL,
       [new ShelfChapter('正文', 1)], false, m.lastReadPage, '', 0, '', [],
       m.fileFormat, null, false, m.filePath);
+    // 恢复用户自定义描述/TAG 与收藏状态(旧记录无此字段走默认值)
+    it.customDescription = m.customDescription ?? '';
+    it.customTags = m.customTags ?? [];
+    it.isFavorite = m.isFavorite ?? false;
     localBookStore.addItem(it);
   }
+}
+
+/**
+ * 详情页编辑后持久化条目元信息(自定义描述/TAG)
+ * 仅更新 imported.json 中对应记录的自定义字段, 其余字段保持不变
+ */
+export function persistItemMeta(context: common.Context, item: ShelfItem): void {
+  const arr = readMeta(context);
+  for (let i = 0; i < arr.length; i++) {
+    if (arr[i].id === item.id) {
+      arr[i].customDescription = item.customDescription;
+      arr[i].customTags = item.customTags;
+      arr[i].isFavorite = item.isFavorite;
+      writeMeta(context, arr);
+      return;
+    }
+  }
+  hilog.warn(DOMAIN, TAG, 'persistItemMeta missing meta id=%{public}s', item.id);
+}
+
+/** WEB 收藏全量落盘(仅收集 ShelfSourceType.WEB 条目) */
+export function persistWebFavorites(context: common.Context, items: ShelfItem[]): void {
+  const arr: WebFavMeta[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (it.sourceType !== ShelfSourceType.WEB) {
+      continue;
+    }
+    const chs: string[] = [];
+    for (let j = 0; j < it.chapters.length; j++) {
+      chs.push(it.chapters[j].name);
+    }
+    arr.push({ id: it.id, title: it.title, cover: it.cover as string, author: it.author,
+      description: it.description, tags: it.tags, chapters: chs });
+  }
+  writeTextFile(webFavFile(context), JSON.stringify(arr));
+}
+
+/** 启动时恢复 WEB 收藏(详情快照, 章节页数固定 0, 仅书架展示) */
+export function restoreWebFavorites(context: common.Context): void {
+  const text = readTextFile(webFavFile(context));
+  if (text.length === 0) {
+    return;
+  }
+  let arr: WebFavMeta[] = [];
+  try {
+    arr = JSON.parse(text) as WebFavMeta[];
+  } catch (e) {
+    return;
+  }
+  for (let i = 0; i < arr.length; i++) {
+    const m = arr[i];
+    const chs: ShelfChapter[] = [];
+    for (let j = 0; j < m.chapters.length; j++) {
+      chs.push(new ShelfChapter(m.chapters[j], 0));
+    }
+    localBookStore.addItem(new ShelfItem(m.id, m.title, m.cover, m.author,
+      m.description, m.tags, ShelfSourceType.WEB, chs, true,
+      0, '', 0, '', [], '', null, false, ''));
+  }
+  hilog.info(DOMAIN, TAG, 'restoreWebFavorites count=%{public}d', arr.length);
 }
 
 /**

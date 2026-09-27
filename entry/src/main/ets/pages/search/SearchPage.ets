@@ -13,7 +13,6 @@ import { ComicSourceMeta, SearchOptionDef } from '../../model/sources/ComicSourc
 import { searchService, SourceSearchResult } from '../../services/SearchService';
 import { comicDetailService } from '../../services/ComicDetailService';
 import { ExploreComic } from '../../services/ExploreService';
-import { ComicDetailPage } from '../comic/ComicDetailPage';
 import { PRIMARY, PRIMARY_50, GRAY_100, GRAY_400, GRAY_500, GRAY_700, GRAY_900,
   CARD, BG, MUTED_FG, ERROR, RADIUS_MD, RADIUS_LG,
   SPACE_2, SPACE_3, SPACE_4, FS_SECTION, FS_CAPTION, FS_SMALL } from '../../utils/Design';
@@ -143,6 +142,9 @@ struct IdPreviewCard {
 @Component
 export struct SearchPage {
   onClose: () => void = () => {};
+  /** 打开在线漫画详情(由窗口根层的 ComicDetailSheet 呈现) */
+  onOpenComic: (sourceKey: string, sourceName: string, comicId: string) => void =
+    (_s: string, _n: string, _i: string) => {};
 
   @State keyword: string = '';
   @State sources: ComicSourceMeta[] = [];
@@ -160,10 +162,6 @@ export struct SearchPage {
   @State errorMsg: string = '';
   /** 按 ID 直达的预览卡片(命中 comic.idMatch 时出现) */
   @State idPreviews: IdPreviewItem[] = [];
-  @State detailVisible: boolean = false;
-  @State detailSourceKey: string = '';
-  @State detailSourceName: string = '';
-  @State detailComicId: string = '';
   /** 源列表 ChipGroup: 下标 0 = 聚合 */
   @State chipItems: ChipGroupItemOptions[] = [];
   @State chipIndex: number = 0;
@@ -330,10 +328,7 @@ export struct SearchPage {
   private openPreview(p: IdPreviewItem): void {
     // 输入可能刚改过(卡片尚未刷新): 以当前输入为准
     const cur = this.keyword.trim();
-    this.detailSourceKey = p.sourceKey;
-    this.detailSourceName = p.sourceName;
-    this.detailComicId = cur.length > 0 ? cur : p.id;
-    this.detailVisible = true;
+    this.onOpenComic(p.sourceKey, p.sourceName, cur.length > 0 ? cur : p.id);
   }
 
   // ---------------------------------------------------------------- 搜索
@@ -521,10 +516,7 @@ export struct SearchPage {
     if (c.id.length === 0) {
       return;
     }
-    this.detailSourceKey = c.sourceKey;
-    this.detailSourceName = c.sourceName;
-    this.detailComicId = c.id;
-    this.detailVisible = true;
+    this.onOpenComic(c.sourceKey, c.sourceName, c.id);
   }
 
   // ---------------------------------------------------------------- UI
@@ -951,18 +943,6 @@ export struct SearchPage {
       // 命中 ID 规则时从顶部滑入的直达预览卡片(浮层, 不推挤内容)
       if (this.idPreviews.length > 0) {
         this.idPreviewPanel()
-      }
-
-      if (this.detailVisible) {
-        ComicDetailPage({
-          sourceKey: this.detailSourceKey,
-          sourceName: this.detailSourceName,
-          comicId: this.detailComicId,
-          onBack: (): void => {
-            this.detailVisible = false;
-          }
-        })
-          .width('100%').height('100%')
       }
     }
     .width('100%').height('100%')

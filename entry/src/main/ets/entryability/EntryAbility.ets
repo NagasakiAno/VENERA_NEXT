@@ -16,7 +16,7 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window, display } from '@kit.ArkUI';
-import { restoreImported } from '../utils/FileImporter';
+import { restoreImported, restoreWebFavorites } from '../utils/FileImporter';
 import { jsSourceManager } from '../services/JsSourceManager';
 import { jsRuntime } from '../runtime/JsRuntime';
 import { initBreakpoints, setFoldStatus, updateWindowSize } from '../utils/Breakpoints';
@@ -58,6 +58,8 @@ export default class EntryAbility extends UIAbility {
     }
     // 恢复已导入的书(从 filesDir/imported.json, 纯文件存储不依赖 Preferences 时序)
     restoreImported(this.context);
+    // 恢复 WEB 收藏(书架收藏页签, filesDir/web_favorites.json)
+    restoreWebFavorites(this.context);
     // 启动扫描已安装的 JS 漫画源
     jsSourceManager.scanFromFilesDir(this.context);
     // 初始化响应式断点

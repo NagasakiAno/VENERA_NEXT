@@ -4,8 +4,12 @@
  * 本地: 收藏 / 继续阅读(上次定位) / 从头阅读 / 自定义描述 / 自定义TAG
  * WEB: 浏览量 / 更新时间 / 下载 / 收藏 / 评论 / 分享 / 章节 / 相关推荐
  */
+import { common } from '@kit.AbilityKit';
+import { promptAction } from '@kit.ArkUI';
 import { ShelfItem, ShelfSourceType, ShelfChapter } from '../../model/ShelfItem';
 import { findShelfItem } from '../../model/DemoData';
+import { localBookStore } from '../../model/LocalBookStore';
+import { persistItemMeta, persistWebFavorites } from '../../utils/FileImporter';
 import { PRIMARY, PRIMARY_50, GRAY_500, GRAY_900, GRAY_100, CARD, BG,
   MUTED_FG, SUCCESS, WARNING, RADIUS_SM, RADIUS_MD, RADIUS_LG, SPACE_2, SPACE_3, SPACE_4, FS_TITLE,
   FS_SECTION, FS_BODY, FS_CAPTION, FS_SMALL } from '../../utils/Design';
@@ -17,6 +21,10 @@ export struct DetailPanel {
   onBack: () => void = () => {};
   @State cur: ShelfItem | null = null;
   @State rels: ShelfItem[] = [];
+  // 本地自定义编辑: 0=无 1=描述 2=TAG
+  @State editingField: number = 0;
+  @State editDesc: string = '';
+  @State editTags: string = '';
 
   aboutToAppear(): void {
     const it = findShelfItem(this.itemId);
@@ -59,6 +67,7 @@ export struct DetailPanel {
         Text(item.isFavorite ? '已收藏' : '收藏').fontSize(FS_SMALL).fontColor(MUTED_FG)
       }
       .width(56).height(48).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD).backgroundColor(GRAY_100)
+      .onClick(() => { this.toggleFavorite(item); })
 
       if (item.lastReadPage > 0) {
         Column() {
@@ -88,24 +97,122 @@ export struct DetailPanel {
     .width('100%').margin({ top: SPACE_3 })
   }
 
-  @Builder
-  localEditPlaceholder() {
-    Row({ space: 10 }) {
-      Row() {
-        Text('✎').fontSize(16).fontColor(PRIMARY)
-        Text('自定义描述').fontSize(FS_CAPTION).fontColor(PRIMARY).margin({ left: 4 })
-      }
-      .height(34).padding({ left: 12, right: 12 }).borderRadius(RADIUS_MD)
-      .backgroundColor(PRIMARY_50).justifyContent(FlexAlign.Center).layoutWeight(1)
-
-      Row() {
-        Text('✎').fontSize(16).fontColor(PRIMARY)
-        Text('自定义TAG').fontSize(FS_CAPTION).fontColor(PRIMARY).margin({ left: 4 })
-      }
-      .height(34).padding({ left: 12, right: 12 }).borderRadius(RADIUS_MD)
-      .backgroundColor(PRIMARY_50).justifyContent(FlexAlign.Center).layoutWeight(1)
+  /** 编辑后刷新书架并持久化(仅本地书) */
+  persistLocal(item: ShelfItem): void {
+    if (item.sourceType !== ShelfSourceType.LOCAL) {
+      return;
     }
-    .width('100%').margin({ top: SPACE_3 })
+    localBookStore.updateItem(item);
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    persistItemMeta(ctx, item);
+  }
+
+  openEdit(field: number): void {
+    const it = this.cur;
+    if (it === null) {
+      return;
+    }
+    this.editDesc = it.customDescription;
+    this.editTags = it.customTags.join(', ');
+    this.editingField = field;
+  }
+
+  saveEdit(): void {
+    const it = this.cur;
+    if (it === null) {
+      return;
+    }
+    if (this.editingField === 1) {
+      it.customDescription = this.editDesc.trim();
+    } else if (this.editingField === 2) {
+      const arr: string[] = [];
+      const parts = this.editTags.split(/[,，、\s]+/);
+      for (let i = 0; i < parts.length; i++) {
+        const t = parts[i].trim();
+        if (t.length > 0) {
+          arr.push(t);
+        }
+      }
+      it.customTags = arr;
+    }
+    this.persistLocal(it);
+    this.editingField = 0;
+  }
+
+  /** 收藏切换: 本地书持久化 isFavorite; WEB 收藏条目点击=取消收藏并移出书架 */
+  toggleFavorite(item: ShelfItem): void {
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    if (item.sourceType === ShelfSourceType.LOCAL) {
+      item.isFavorite = !item.isFavorite;
+      localBookStore.updateItem(item);
+      persistItemMeta(ctx, item);
+      promptAction.showToast({ message: item.isFavorite ? '已收藏' : '已取消收藏' });
+    } else {
+      localBookStore.removeItem(item.id);
+      persistWebFavorites(ctx, localBookStore.all());
+      promptAction.showToast({ message: '已取消收藏' });
+      this.onBack();
+    }
+  }
+
+  /** 本地自定义编辑区: 描述/TAG 两个入口 + 内联编辑器 */
+  @Builder
+  localEditSection(item: ShelfItem) {
+    Column() {
+      Row({ space: 10 }) {
+        Row() {
+          Text('✎').fontSize(16).fontColor(PRIMARY)
+          Text(item.customDescription.length > 0 ? '描述已自定义' : '自定义描述')
+            .fontSize(FS_CAPTION).fontColor(PRIMARY).margin({ left: 4 })
+        }
+        .height(34).padding({ left: 12, right: 12 }).borderRadius(RADIUS_MD)
+        .backgroundColor(PRIMARY_50).justifyContent(FlexAlign.Center).layoutWeight(1)
+        .onClick(() => { this.openEdit(1); })
+
+        Row() {
+          Text('✎').fontSize(16).fontColor(PRIMARY)
+          Text(item.customTags.length > 0 ? 'TAG已自定义' : '自定义TAG')
+            .fontSize(FS_CAPTION).fontColor(PRIMARY).margin({ left: 4 })
+        }
+        .height(34).padding({ left: 12, right: 12 }).borderRadius(RADIUS_MD)
+        .backgroundColor(PRIMARY_50).justifyContent(FlexAlign.Center).layoutWeight(1)
+        .onClick(() => { this.openEdit(2); })
+      }
+      .width('100%').margin({ top: SPACE_3 })
+
+      if (this.editingField === 1) {
+        Column({ space: 10 }) {
+          TextArea({ text: this.editDesc, placeholder: '输入自定义描述(留空恢复默认)' })
+            .width('100%').height(90).fontSize(FS_BODY)
+            .onChange((v: string) => { this.editDesc = v; })
+          Row({ space: 10 }) {
+            Button('取消').layoutWeight(1).height(38).fontSize(FS_BODY)
+              .backgroundColor(GRAY_100).fontColor(GRAY_500)
+              .onClick(() => { this.editingField = 0; })
+            Button('保存').layoutWeight(1).height(38).fontSize(FS_BODY)
+              .backgroundColor(PRIMARY).fontColor(CARD)
+              .onClick(() => { this.saveEdit(); })
+          }.width('100%')
+        }
+        .width('100%').margin({ top: SPACE_3 })
+      } else if (this.editingField === 2) {
+        Column({ space: 10 }) {
+          TextInput({ text: this.editTags, placeholder: '多个TAG用逗号分隔(留空恢复默认)' })
+            .width('100%').height(42).fontSize(FS_BODY)
+            .onChange((v: string) => { this.editTags = v; })
+          Row({ space: 10 }) {
+            Button('取消').layoutWeight(1).height(38).fontSize(FS_BODY)
+              .backgroundColor(GRAY_100).fontColor(GRAY_500)
+              .onClick(() => { this.editingField = 0; })
+            Button('保存').layoutWeight(1).height(38).fontSize(FS_BODY)
+              .backgroundColor(PRIMARY).fontColor(CARD)
+              .onClick(() => { this.saveEdit(); })
+          }.width('100%')
+        }
+        .width('100%').margin({ top: SPACE_3 })
+      }
+    }
+    .width('100%')
   }
 
   @Builder
@@ -150,7 +257,9 @@ export struct DetailPanel {
     Row() {
       Text(ch.name).fontSize(FS_BODY).fontColor(GRAY_900).layoutWeight(1)
         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-      Text('第' + ch.pages + '页').fontSize(FS_SMALL).fontColor(MUTED_FG)
+      if (ch.pages > 0) {
+        Text('第' + ch.pages + '页').fontSize(FS_SMALL).fontColor(MUTED_FG)
+      }
     }
     .width('100%').height(40).padding({ left: SPACE_3, right: SPACE_3 })
     .onClick(() => { this.onStartRead(item, idx); })
@@ -193,12 +302,12 @@ export struct DetailPanel {
     Column() {
       this.headRow(item)
       this.mainAction(item)
-      this.localEditPlaceholder()
+      this.localEditSection(item)
       this.sectionTitle('简介')
-      Text(item.description).fontSize(FS_BODY).fontColor(GRAY_900).lineHeight(21).width('100%').margin({ top: SPACE_2 })
+      Text(descOf(item)).fontSize(FS_BODY).fontColor(GRAY_900).lineHeight(21).width('100%').margin({ top: SPACE_2 })
       this.sectionTitle('标签')
       Flex({ wrap: FlexWrap.Wrap }) {
-        ForEach(item.tags, (t: string) => { this.tagChip(t, GRAY_100, GRAY_500) }, (t: string) => t)
+        ForEach(tagsOf(item), (t: string) => { this.tagChip(t, GRAY_100, GRAY_500) }, (t: string) => t)
       }.width('100%').margin({ top: SPACE_2 })
       this.sectionTitle('章节')
       this.chapterList(item)
@@ -276,4 +385,14 @@ function fmt(n: number): string {
     return (n / 10000).toFixed(1) + 'w';
   }
   return n + '';
+}
+
+/** 展示用描述: 自定义优先(非空时覆盖默认) */
+function descOf(it: ShelfItem): string {
+  return it.customDescription.length > 0 ? it.customDescription : it.description;
+}
+
+/** 展示用TAG: 自定义优先(非空时覆盖默认) */
+function tagsOf(it: ShelfItem): string[] {
+  return it.customTags.length > 0 ? it.customTags : it.tags;
 }

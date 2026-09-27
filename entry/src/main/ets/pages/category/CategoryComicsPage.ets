@@ -8,7 +8,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { comicSourceManager } from '../../model/ComicSource';
 import { categoryService, CategoryBatch } from '../../services/CategoryService';
 import { ExploreComic } from '../../services/ExploreService';
-import { ComicDetailPage } from '../comic/ComicDetailPage';
+import { ComicDetailSheet } from '../comic/ComicDetailSheet';
 import { PRIMARY, GRAY_100, GRAY_900, CARD, BG, MUTED_FG, ERROR, RADIUS_MD,
   SPACE_2, SPACE_3, SPACE_4, FS_TITLE, FS_SMALL } from '../../utils/Design';
 
@@ -45,11 +45,11 @@ export struct CategoryComicsPage {
   @State loading: boolean = false;
   @State loadingMore: boolean = false;
   @State errorMsg: string = '';
-  /** 详情覆盖层 */
+  /** 详情呈现容器(ComicDetailSheet: 竖屏半模态/横屏侧滑) */
   @State detailVisible: boolean = false;
-  private detailSourceKey: string = '';
-  private detailSourceName: string = '';
-  private detailComicId: string = '';
+  @State detailSourceKey: string = '';
+  @State detailSourceName: string = '';
+  @State detailComicId: string = '';
 
   private colIndexes: number[] = [0, 1, 2];
 
@@ -344,18 +344,16 @@ export struct CategoryComicsPage {
       }
       .width('100%').height('100%').backgroundColor(BG)
 
-      // 详情覆盖层(与搜索/发现共用同一个详情组件)
-      if (this.detailVisible) {
-        ComicDetailPage({
-          sourceKey: this.detailSourceKey,
-          sourceName: this.detailSourceName,
-          comicId: this.detailComicId,
-          onBack: (): void => {
-            this.detailVisible = false;
-          }
-        })
-          .width('100%').height('100%')
-      }
+      // 详情呈现容器(竖屏半模态/横屏右侧滑入)
+      ComicDetailSheet({
+        visible: this.detailVisible,
+        sourceKey: this.detailSourceKey,
+        sourceName: this.detailSourceName,
+        comicId: this.detailComicId,
+        onClose: (): void => {
+          this.detailVisible = false;
+        }
+      })
     }
     .width('100%').height('100%')
   }

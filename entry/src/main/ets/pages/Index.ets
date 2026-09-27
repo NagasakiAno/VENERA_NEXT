@@ -10,8 +10,11 @@ import { DiscoveryPage } from './discovery/DiscoveryPage';
 import { SettingsPage } from './settings/SettingsPage';
 import { SearchPage } from './search/SearchPage';
 import { DetailPanel } from './comic/DetailPanel';
+import { ComicDetailSheet } from './comic/ComicDetailSheet';
 import { ReaderPage } from './comic/ReaderPage';
-import { ShelfItem } from '../model/ShelfItem';
+import { ReaderSession } from './comic/ReaderSession';
+import { promptAction } from '@kit.ArkUI';
+import { ShelfItem, ShelfSourceType } from '../model/ShelfItem';
 import { ReaderChapter } from '../model/ReaderModel';
 import { ensureBookData } from '../utils/FileImporter';
 import { PRIMARY, GRAY_500, CARD, BG, FS_SMALL, RADIUS_LG, GRAY_100 } from '../utils/Design';
@@ -30,12 +33,14 @@ struct Index {
   // 详情面板状态
   @State detailItemId: string = '';
   @State showDetail: boolean = false;
-  // 阅读器状态
-  @State showReader: boolean = false;
-  @State readerSourceItem: ShelfItem | null = null;
-  @State readerChapterStart: number = 0;
-  // 真实章节(本地导入书解析结果, 空则阅读器走 demo)
-  readerSourceChapter: ReaderChapter | null = null;
+  // 在线漫画详情(ComicDetailSheet): 发现/搜索冒泡到窗口根层呈现
+  @State webDetailVisible: boolean = false;
+  @State webDetailSourceKey: string = '';
+  @State webDetailSourceName: string = '';
+  @State webDetailComicId: string = '';
+  // 全局阅读器: 由 ReaderSession.publish 发布, 窗口根层统一挂载(保证全屏)
+  @StorageLink('globalReaderVisible') readerVisible: boolean = false;
+  @StorageLink('globalReaderSession') readerSession: ReaderSession = new ReaderSession();
 
   tabSymbol(index: number): Resource {
     if (index === 0) { return $r('sys.symbol.square_grid_2x2'); }
@@ -53,19 +58,37 @@ struct Index {
     this.showDetail = false;
   }
 
+  // ===== 在线漫画详情控制(ComicDetailSheet) =====
+  openWebComic(sourceKey: string, sourceName: string, comicId: string): void {
+    this.webDetailSourceKey = sourceKey;
+    this.webDetailSourceName = sourceName;
+    this.webDetailComicId = comicId;
+    this.webDetailVisible = true;
+  }
+
+  closeWebComic(): void {
+    this.webDetailVisible = false;
+  }
+
   async onStartRead(item: ShelfItem, chapter: number): Promise<void> {
+    // WEB 收藏条目: 章节阅读需联网加载, 请从发现/搜索的 ComicDetailSheet 进入
+    if (item.sourceType === ShelfSourceType.WEB) {
+      promptAction.showToast({ message: '网络漫画请从发现/搜索页进入阅读' });
+      return;
+    }
     // 本地导入书: 惰性解析章节(持久化恢复后 bookData 为空)
     hilog.info(0, 'Index', 'onStartRead id=%{public}s fmt=%{public}s sandbox=%{public}s',
       item.id, item.fileFormat, item.sandboxPath);
     await ensureBookData(item);
-    this.readerSourceItem = item;
-    this.readerChapterStart = chapter;
-    this.readerSourceChapter = resolveReaderChapter(item, chapter);
+    const ext = resolveReaderChapter(item, chapter);
     hilog.info(0, 'Index', 'onStartRead chapter null=%{public}s pages=%{public}d',
-      (this.readerSourceChapter === null) ? 'y' : 'n',
-      this.readerSourceChapter !== null ? this.readerSourceChapter.pages.length : 0);
+      (ext === null) ? 'y' : 'n',
+      ext !== null ? ext.pages.length : 0);
     this.showDetail = false;
-    this.showReader = true;
+    // 发布到全局阅读器(Index 窗口根层挂载, 保证全屏)
+    const s = new ReaderSession();
+    s.chapter = ext;
+    ReaderSession.publish(s);
   }
 
   /** 详情面板——横屏右侧覆盖层(滑入) */
@@ -136,7 +159,10 @@ struct Index {
       }.tabBar(this.hdsTab(0, '书架', $r('sys.symbol.square_grid_2x2')))
 
       TabContent() {
-        DiscoveryPage({ onOpenSearch: (): void => { this.showSearch = true; } })
+        DiscoveryPage({
+          onOpenSearch: (): void => { this.showSearch = true; },
+          onOpenComic: (sk: string, sn: string, id: string): void => this.openWebComic(sk, sn, id)
+        })
       }.tabBar(this.hdsTab(1, '发现', $r('sys.symbol.magnifyingglass')))
 
       TabContent() {
@@ -223,7 +249,10 @@ struct Index {
             .combine(TransitionEffect.translate({ y: 16 }))
             .animation({ duration: 260, curve: Curve.EaseOut }))
       } else if (this.currentIndex === 1) {
-        DiscoveryPage({ onOpenSearch: (): void => { this.showSearch = true; } })
+        DiscoveryPage({
+          onOpenSearch: (): void => { this.showSearch = true; },
+          onOpenComic: (sk: string, sn: string, id: string): void => this.openWebComic(sk, sn, id)
+        })
           .transition(TransitionEffect.OPACITY
             .combine(TransitionEffect.translate({ y: 16 }))
             .animation({ duration: 260, curve: Curve.EaseOut }))
@@ -297,19 +326,6 @@ struct Index {
           }
           .width('100%').height('100%').alignItems(VerticalAlign.Top)
         }
-
-        // 阅读器覆盖层(最高层)
-        if (this.showReader && this.readerSourceItem !== null) {
-          ReaderPage({
-            chapterId: 1,
-            externalChapter: this.readerSourceChapter,
-            onBack: (): void => {
-              this.showReader = false;
-              this.readerSourceChapter = null;
-            }
-          })
-          .width('100%').height('100%')
-        }
       }
       .width('100%').height('100%')
       .padding({ top: 40 })
@@ -317,8 +333,41 @@ struct Index {
 
       // 搜索覆盖层: 不参与上面的状态栏下移, 以便顶栏材质铺满到屏幕顶端
       if (this.showSearch) {
-        SearchPage({ onClose: (): void => { this.showSearch = false; } })
+        SearchPage({
+          onClose: (): void => { this.showSearch = false; },
+          onOpenComic: (sk: string, sn: string, id: string): void => this.openWebComic(sk, sn, id)
+        })
           .width('100%').height('100%')
+      }
+
+      // 在线漫画详情(ComicDetailSheet): 层级在搜索之上、阅读器之下
+      ComicDetailSheet({
+        visible: this.webDetailVisible,
+        sourceKey: this.webDetailSourceKey,
+        sourceName: this.webDetailSourceName,
+        comicId: this.webDetailComicId,
+        onClose: (): void => this.closeWebComic()
+      })
+
+      // 全局阅读器: 窗口根层挂载(最高层), 覆盖整个窗口(含 sidebar/页签/状态栏区域)
+      if (this.readerVisible) {
+        ReaderPage({
+          chapterId: 1,
+          externalChapter: this.readerSession.chapter,
+          hasPrevChapter: this.readerSession.hasPrev,
+          hasNextChapter: this.readerSession.hasNext,
+          remoteLoader: this.readerSession.loader,
+          onSwitchChapter: this.readerSession.switcher,
+          onProgress: this.readerSession.onProgress,
+          initialPage: this.readerSession.startPage,
+          onBack: (): void => {
+            const s = this.readerSession;
+            this.readerSession = new ReaderSession();
+            ReaderSession.hide();
+            s.onClose();
+          }
+        })
+        .width('100%').height('100%')
       }
     }
     .width('100%').height('100%').backgroundColor(BG)

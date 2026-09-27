@@ -5,7 +5,7 @@
  */
 import { ShelfItem, ShelfSourceType } from '../../model/ShelfItem';
 import { localBookStore } from '../../model/LocalBookStore';
-import { doImport, restoreImported, removeImported } from '../../utils/FileImporter';
+import { doImport, restoreImported, removeImported, restoreWebFavorites, persistWebFavorites } from '../../utils/FileImporter';
 import { promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { PRIMARY, PRIMARY_50, GRAY_500, GRAY_900, GRAY_100, CARD, BG,
@@ -46,6 +46,7 @@ export struct BookshelfPage {
     // 页面出现时恢复已导入的书(幂等, 与 EntryAbility 互补)
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
     restoreImported(ctx);
+    restoreWebFavorites(ctx);
     this.localItems = localBookStore.all();
   }
 
@@ -68,11 +69,12 @@ export struct BookshelfPage {
     }
   }
 
-  /** 确认删除书籍 */
+  /** 确认删除书籍(WEB 收藏条目=移出书架并同步落盘) */
   private confirmDelete(item: ShelfItem): void {
+    const isWeb = item.sourceType === ShelfSourceType.WEB;
     promptAction.showDialog({
       title: '删除书籍',
-      message: '确定删除《' + item.title + '》吗？文件将一并移除。',
+      message: '确定删除《' + item.title + '》吗？' + (isWeb ? '' : '文件将一并移除。'),
       buttons: [
         { text: '取消', color: GRAY_500 },
         { text: '删除', color: ERROR }
@@ -80,7 +82,12 @@ export struct BookshelfPage {
     }).then((res: promptAction.ShowDialogSuccessResponse) => {
       if (res.index === 1) {
         const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
-        removeImported(ctx, item);
+        if (isWeb) {
+          localBookStore.removeItem(item.id);
+          persistWebFavorites(ctx, localBookStore.all());
+        } else {
+          removeImported(ctx, item);
+        }
         promptAction.showToast({ message: '已删除' });
       }
     }).catch((e: Error) => {

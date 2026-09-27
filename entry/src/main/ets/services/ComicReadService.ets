@@ -288,9 +288,12 @@ async function createFromPixels(raw: RawPixels): Promise<image.PixelMap | null> 
     return null;
   }
   try {
+    // srcPixelFormat 描述的是「传入缓冲区」的格式, 默认为 BGRA_8888,
+    // 不写会把 RGBA 字节当 BGRA 读, 导致红蓝通道互换
     const opts: image.InitializationOptions = {
       size: { width: raw.width, height: raw.height },
       pixelFormat: image.PixelMapFormat.RGBA_8888,
+      srcPixelFormat: image.PixelMapFormat.RGBA_8888,
       editable: false
     };
     return await image.createPixelMap(raw.buffer, opts);
