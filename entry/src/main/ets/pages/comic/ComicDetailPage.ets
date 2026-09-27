@@ -16,6 +16,7 @@ import { comicDetailService } from '../../services/ComicDetailService';
 import { comicReadService } from '../../services/ComicReadService';
 import { readHistoryService, ReadHistoryItem } from '../../services/ReadHistoryService';
 import { persistWebFavorites } from '../../utils/FileImporter';
+import { appSettings } from '../../model/AppSettings';
 import { ReaderSession } from './ReaderSession';
 import { PRIMARY, PRIMARY_50, SUCCESS, GRAY_100, GRAY_500, GRAY_900, CARD, BG, MUTED_FG, ERROR,
   RADIUS_SM, RADIUS_MD, RADIUS_LG, SPACE_2, SPACE_3, SPACE_4,
@@ -30,6 +31,10 @@ const MAX_TAGS = 30;
 class ChapterItem {
   id: string = '';
   title: string = '';
+  /** 所属分组名(非分组漫画为空串) */
+  group: string = '';
+  /** 组内序号(0-based, 用于显示编号) */
+  groupIdx: number = 0;
 }
 
 /** 展示用标签 */
@@ -70,6 +75,8 @@ export struct ComicDetailPage {
   @State progress: ReadHistoryItem | null = null;
   /** 是否已收藏到书架(WEB 收藏快照) */
   @State isFaved: boolean = false;
+  /** 章节倒序显示(从 AppSettings 初始化, 详情页可临时切换) */
+  @State reverseChapters: boolean = false;
   /** 当前阅读章节的图片地址(与 readerChapter.pages 下标对齐) */
   private readerUrls: string[] = [];
   private readerEpId: string = '';
@@ -77,6 +84,7 @@ export struct ComicDetailPage {
   aboutToAppear(): void {
     hilog.info(DOMAIN, TAG, '详情页创建 id=%{public}s', this.comicId);
     this.currentId = this.comicId;
+    this.reverseChapters = appSettings.get<boolean>('reverseChapterOrder', false);
     this.reload();
   }
 
@@ -97,7 +105,7 @@ export struct ComicDetailPage {
       const d = await comicDetailService.load(this.sourceKey, id);
       this.detail = d;
       this.hasDetail = true;
-      this.chapters = buildChapters(d);
+      this.chapters = buildChapters(d, this.reverseChapters);
       this.tags = buildTags(d);
       this.recommend = d.recommend;
     } catch (e) {
@@ -457,11 +465,11 @@ export struct ComicDetailPage {
     .width('100%').alignItems(HorizontalAlign.Start)
   }
 
-  /** 章节行: 序号 + 标题 + 提示(读到过 / 右箭头) */
+  /** 章节行: 序号(组内编号) + 标题 + 提示(读到过 / 右箭头) */
   @Builder
   chapterRow(c: ChapterItem, idx: number) {
     Row({ space: SPACE_3 }) {
-      Text((idx + 1).toString())
+      Text((c.groupIdx + 1).toString())
         .fontSize(FS_SMALL).fontColor(MUTED_FG)
         .width(28).height(28).textAlign(TextAlign.Center)
         .borderRadius(14).backgroundColor(GRAY_100)
@@ -493,12 +501,59 @@ export struct ComicDetailPage {
     return p !== null && p.epId === c.id;
   }
 
+  /** 切换章节倒序: 重建 chapters 数组, 阅读器导航随之跟随 */
+  private toggleReverseChapters(): void {
+    this.reverseChapters = !this.reverseChapters;
+    if (this.hasDetail) {
+      this.chapters = buildChapters(this.detail, this.reverseChapters);
+    }
+  }
+
+  /** 判断当前章节项是否需要显示分组标题(组首或第一项) */
+  private isGroupHeader(idx: number): boolean {
+    if (idx >= this.chapters.length) {
+      return false;
+    }
+    const c = this.chapters[idx];
+    if (c.group.length === 0) {
+      return false;
+    }
+    return idx === 0 || this.chapters[idx - 1].group !== c.group;
+  }
+
   @Builder
   chapterSection() {
     Column() {
-      this.sectionTitle('章节')
+      // 章节标题行 + 倒序切换按钮
+      Row() {
+        Text('章节').fontSize(FS_SECTION).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
+        Blank()
+        Row({ space: 4 }) {
+          SymbolGlyph($r('sys.symbol.chevron_up'))
+            .fontSize(14)
+            .fontColor([this.reverseChapters ? PRIMARY : MUTED_FG])
+          SymbolGlyph($r('sys.symbol.chevron_down'))
+            .fontSize(14)
+            .fontColor([this.reverseChapters ? PRIMARY : MUTED_FG])
+          Text(this.reverseChapters ? '倒序' : '正序')
+            .fontSize(FS_SMALL).fontColor(this.reverseChapters ? PRIMARY : MUTED_FG)
+        }
+        .onClick(() => {
+          this.toggleReverseChapters();
+        })
+      }
+      .width('100%').margin({ top: SPACE_4 })
+
       Column() {
         ForEach(this.chapters, (c: ChapterItem, idx: number) => {
+          // 分组标题: 组名变化时插入分隔标题
+          if (this.isGroupHeader(idx)) {
+            Row() {
+              Text(c.group)
+                .fontSize(FS_BODY).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
+            }
+            .width('100%').padding({ top: SPACE_2, bottom: 4 })
+          }
           this.chapterRow(c, idx)
           if (idx < this.chapters.length - 1) {
             Divider().color(GRAY_100).strokeWidth(0.5)
@@ -619,16 +674,47 @@ export struct ComicDetailPage {
   }
 }
 
-/** ComicChapters(扁平或分组) -> 扁平章节项 */
-function buildChapters(d: ComicDetails): ChapterItem[] {
+/** ComicChapters(扁平或分组) -> 扁平章节项(保留分组信息, 可选倒序) */
+function buildChapters(d: ComicDetails, reverse: boolean): ChapterItem[] {
   const out: ChapterItem[] = [];
   if (d.chapters !== null) {
-    d.chapters.allChapters().forEach((title: string, id: string) => {
-      const item = new ChapterItem();
-      item.id = id;
-      item.title = title;
-      out.push(item);
-    });
+    if (d.chapters.isGrouped()) {
+      // 分组结构: 逐组展开, 每组内可倒序, 组间顺序不变
+      d.chapters.grouped.forEach((group: Map<string, string>, groupName: string) => {
+        const items: ChapterItem[] = [];
+        group.forEach((title: string, id: string) => {
+          const item = new ChapterItem();
+          item.id = id;
+          item.title = title;
+          item.group = groupName;
+          items.push(item);
+        });
+        if (reverse) {
+          items.reverse();
+        }
+        for (let i = 0; i < items.length; i++) {
+          items[i].groupIdx = i;
+          out.push(items[i]);
+        }
+      });
+    } else {
+      // 扁平结构: 整体可倒序
+      const items: ChapterItem[] = [];
+      d.chapters.chapters.forEach((title: string, id: string) => {
+        const item = new ChapterItem();
+        item.id = id;
+        item.title = title;
+        item.group = '';
+        items.push(item);
+      });
+      if (reverse) {
+        items.reverse();
+      }
+      for (let i = 0; i < items.length; i++) {
+        items[i].groupIdx = i;
+        out.push(items[i]);
+      }
+    }
   }
   // 部分源不给章节列表(整本即一章, 如 e-hentai 只返回 maxPage):
   // 按原版语义补一个隐式章节, id 留空 -> 阅读时 ep 传 null
@@ -636,6 +722,8 @@ function buildChapters(d: ComicDetails): ChapterItem[] {
     const item = new ChapterItem();
     item.id = '';
     item.title = '全一話';
+    item.group = '';
+    item.groupIdx = 0;
     out.push(item);
   }
   return out;

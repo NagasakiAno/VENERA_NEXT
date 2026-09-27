@@ -26,7 +26,9 @@ export class AppSettings {
     ['explore_pages', '[]'],       // Explore 页 title 列表(JSON string[])
     ['categories', '[]'],          // 分类 Tab(key 列表)
     ['favorites', '[]'],           // 网络收藏 Tab
-    ['searchSources', '[]']        // 搜索可选源(key 列表)
+    ['searchSources', '[]'],       // 搜索可选源(key 列表)
+    // === 阅读体验 ===
+    ['reverseChapterOrder', false]  // 章节倒序显示(详情页可临时切换)
   ]);
 
   static getInstance(): AppSettings {

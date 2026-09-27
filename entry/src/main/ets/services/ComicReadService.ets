@@ -16,8 +16,6 @@ import { jsRuntime } from '../runtime/JsRuntime';
 import { imageBridge, ImageBuffer } from '../runtime/ImageBridge';
 import { diskCacheManager } from '../utils/DiskCacheManager';
 import { fileIo as fs } from '@kit.CoreFileKit';
-import { diskCacheManager } from '../utils/DiskCacheManager';
-import { fileIo as fs } from '@kit.CoreFileKit';
 
 const DOMAIN = 0x0000;
 const TAG = 'ComicReadService';
