@@ -11,6 +11,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { Comic, ComicDetails } from '../../model/ComicModels';
 import { ShelfItem, ShelfChapter, ShelfSourceType } from '../../model/ShelfItem';
 import { localBookStore } from '../../model/LocalBookStore';
+import { localFavoritesStore, FavoriteItem } from '../../model/LocalFavoritesStore';
 import { ReaderChapter, ReaderPageItem, ReaderPageType } from '../../model/ReaderModel';
 import { comicDetailService } from '../../services/ComicDetailService';
 import { comicReadService } from '../../services/ComicReadService';
@@ -418,7 +419,7 @@ export struct ComicDetailPage {
     return 'web_' + this.sourceKey + '_' + this.currentId;
   }
 
-  /** 收藏/取消收藏: 详情快照入书架(收藏页签可见), 落盘 web_favorites.json */
+  /** 收藏/取消收藏: 同时写入书架(LocalBookStore)和收藏夹(LocalFavoritesStore) */
   private toggleFavorite(): void {
     if (!this.hasDetail) {
       return;
@@ -426,12 +427,15 @@ export struct ComicDetailPage {
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
     const id = this.webFavId();
     if (this.isFaved) {
+      // 取消收藏：从书架和所有收藏夹移除
       localBookStore.removeItem(id);
+      localFavoritesStore.removeFromAllFolders(id);
       this.isFaved = false;
       persistWebFavorites(ctx, localBookStore.all());
       promptAction.showToast({ message: '已取消收藏' });
       return;
     }
+    // 添加收藏：写入书架 + 默认收藏夹
     const chs: ShelfChapter[] = [];
     for (let i = 0; i < this.chapters.length; i++) {
       chs.push(new ShelfChapter(this.chapters[i].title, 0));
@@ -443,9 +447,16 @@ export struct ComicDetailPage {
     localBookStore.addItem(new ShelfItem(id, this.detail.title, this.detail.cover,
       this.detail.uploader, this.detail.description, tagArr, ShelfSourceType.WEB, chs, true,
       0, '', 0, '', [], '', null, false, ''));
+    // 同时写入 LocalFavoritesStore（默认文件夹）
+    const favItem = new FavoriteItem(
+      id, this.detail.title, this.detail.uploader,
+      typeof this.detail.cover === 'string' ? this.detail.cover as string : '',
+      tagArr, Date.now(), 0, ShelfSourceType.WEB, this.sourceKey, this.currentId
+    );
+    localFavoritesStore.addComic('收藏', favItem);
     this.isFaved = true;
     persistWebFavorites(ctx, localBookStore.all());
-    promptAction.showToast({ message: '已收藏到书架' });
+    promptAction.showToast({ message: '已收藏' });
   }
 
   @Builder

@@ -5,6 +5,7 @@
  */
 import { ShelfItem, ShelfSourceType } from '../../model/ShelfItem';
 import { localBookStore } from '../../model/LocalBookStore';
+import { localFavoritesStore, FavoriteItem, FavoriteFolder } from '../../model/LocalFavoritesStore';
 import { doImport, restoreImported, removeImported, restoreWebFavorites, persistWebFavorites } from '../../utils/FileImporter';
 import { promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
@@ -37,6 +38,11 @@ export struct BookshelfPage {
   @State segSelected: number[] = [0];
   // 管理模式(显示删除角标)
   @State manageMode: boolean = false;
+  // === 收藏 Tab 专属状态 ===
+  @State favFolderNames: string[] = [];
+  @State favCurrentFolder: string = '收藏';
+  @State favItems: FavoriteItem[] = [];
+  @State favShowFolderBar: boolean = false;
 
   aboutToAppear(): void {
     // 订阅 store 变化, 导入/恢复/删除后刷新本地列表
@@ -48,6 +54,72 @@ export struct BookshelfPage {
     restoreImported(ctx);
     restoreWebFavorites(ctx);
     this.localItems = localBookStore.all();
+    // 初始化收藏 store
+    localFavoritesStore.init(ctx);
+    localFavoritesStore.subscribe(() => {
+      this.refreshFavState();
+    });
+    this.refreshFavState();
+  }
+
+  /** 刷新收藏 Tab 状态 */
+  private refreshFavState(): void {
+    this.favFolderNames = localFavoritesStore.getFolderNames();
+    if (this.favCurrentFolder === '' || localFavoritesStore.getFolder(this.favCurrentFolder) === null) {
+      this.favCurrentFolder = '收藏';
+    }
+    this.favItems = localFavoritesStore.getFolderComics(this.favCurrentFolder);
+  }
+
+  /** 创建新文件夹 */
+  private showCreateFolderDialog(): void {
+    promptAction.showDialog({
+      title: '新建收藏夹',
+      message: '请输入文件夹名称',
+      buttons: [
+        { text: '取消', color: GRAY_500 },
+        { text: '创建', color: PRIMARY }
+      ]
+    }).then((res: promptAction.ShowDialogSuccessResponse) => {
+      if (res.index === 1) {
+        // 使用 TextInput 方式更合适，但 showDialog 不支持输入
+        // 这里用简单方式：创建带默认名的文件夹
+        const baseName = '新文件夹';
+        let name = baseName;
+        let suffix = 1;
+        while (!localFavoritesStore.createFolder(name)) {
+          name = baseName + '(' + suffix + ')';
+          suffix++;
+        }
+        this.favCurrentFolder = name;
+        this.refreshFavState();
+        promptAction.showToast({ message: '已创建: ' + name });
+      }
+    }).catch((e: Error) => {});
+  }
+
+  /** 切换收藏文件夹 */
+  private switchFavFolder(name: string): void {
+    this.favCurrentFolder = name;
+    this.favItems = localFavoritesStore.getFolderComics(name);
+    this.favShowFolderBar = false;
+  }
+
+  /** 从收藏夹移除 */
+  private removeFavItem(item: FavoriteItem): void {
+    promptAction.showDialog({
+      title: '取消收藏',
+      message: '确定将《' + item.title + '》从"' + this.favCurrentFolder + '"移除吗？',
+      buttons: [
+        { text: '取消', color: GRAY_500 },
+        { text: '移除', color: ERROR }
+      ]
+    }).then((res: promptAction.ShowDialogSuccessResponse) => {
+      if (res.index === 1) {
+        localFavoritesStore.removeComic(this.favCurrentFolder, item.id);
+        promptAction.showToast({ message: '已移除' });
+      }
+    }).catch((e: Error) => {});
   }
 
   /** 导入本地文件(TXT/EPUB) */
@@ -208,6 +280,89 @@ export struct BookshelfPage {
     .width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
   }
 
+  /** 收藏 Tab: 文件夹横向选择栏 */
+  @Builder
+  favFolderBar() {
+    Row({ space: 8 }) {
+      // 文件夹列表（横向滚动）
+      Scroll() {
+        Row({ space: 8 }) {
+          ForEach(this.favFolderNames, (name: string) => {
+            Text(name)
+              .fontSize(FS_SMALL)
+              .fontColor(this.favCurrentFolder === name ? CARD : GRAY_500)
+              .backgroundColor(this.favCurrentFolder === name ? PRIMARY : GRAY_100)
+              .borderRadius(16)
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => { this.switchFavFolder(name); })
+          }, (name: string) => name)
+          // 新建文件夹按钮
+          Text('+')
+            .fontSize(FS_SMALL)
+            .fontColor(PRIMARY)
+            .backgroundColor(PRIMARY_50)
+            .borderRadius(16)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => { this.showCreateFolderDialog(); })
+        }
+      }
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
+      .layoutWeight(1)
+    }
+    .width('92%')
+    .margin({ top: 4, bottom: 4 })
+  }
+
+  /** 收藏项封面格 */
+  @Builder
+  favCoverCell(item: FavoriteItem) {
+    Column() {
+      Stack({ alignContent: Alignment.BottomStart }) {
+        Image(item.cover).width('100%').aspectRatio(3.0 / 4.0).borderRadius(RADIUS_MD)
+          .objectFit(ImageFit.Cover).backgroundColor(GRAY_100)
+        // 来源角标
+        if (item.sourceType === ShelfSourceType.WEB) {
+          Text('WEB').fontSize(9).fontColor(CARD).backgroundColor('#80145CDE')
+            .borderRadius(4).padding({ left: 5, right: 5, top: 1, bottom: 1 }).margin(6)
+        }
+        // 管理模式: 右上角删除角标
+        if (this.manageMode) {
+          Text('×').fontSize(16).fontColor(CARD)
+            .width(26).height(26).borderRadius(13)
+            .backgroundColor('#E8455E').textAlign(TextAlign.Center)
+            .position({ top: 4, right: 4 })
+            .onClick(() => { this.removeFavItem(item); })
+        }
+      }
+      .width('100%').aspectRatio(3.0 / 4.0).borderRadius(RADIUS_MD).clip(true)
+
+      Text(item.title).fontSize(FS_CAPTION).maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis }).fontColor(GRAY_900).margin({ top: 4 })
+    }
+    .width('100%')
+    .onClick(() => {
+      if (!this.manageMode) {
+        // 从收藏项打开详情：构造 ShelfItem 并回调
+        const shelfItem = new ShelfItem(
+          item.id, item.title, item.cover, item.author, '', item.tags,
+          item.sourceType, [], true, 0, '', 0, '', [], '', null, false, ''
+        );
+        this.onOpenDetail(shelfItem);
+      }
+    })
+  }
+
+  /** 收藏空态 */
+  @Builder
+  favEmptyView() {
+    Column({ space: 10 }) {
+      SymbolGlyph($r('sys.symbol.heart')).fontSize(40).fontColor([GRAY_100])
+      Text('暂无收藏，在漫画详情页点击收藏按钮添加').fontSize(FS_SMALL).fontColor(MUTED_FG)
+    }
+    .width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
+  }
+
   build() {
     Column() {
       // 顶栏: SegmentButton 胶囊单选(显式颜色, 深色模式可读)
@@ -218,28 +373,67 @@ export struct BookshelfPage {
         onItemClicked: (index: number): void => {
           this.tab = index;
           this.segSelected = [index];
+          if (index === 3) {
+            this.refreshFavState();
+          }
         }
       })
       .width('92%')
       .margin({ top: 12, bottom: 4 })
 
-      // 本地 tab 顶栏下方导入栏(书籍列表上面, 无遮挡冲突)
+      // 本地 tab 顶栏下方导入栏
       if (this.tab === 0) {
         this.importBar()
       }
 
-      // 封面网格 / 空态
-      if (this.currentItems().length === 0) {
-        this.emptyView()
-      } else {
-        Grid() {
-          ForEach(this.currentItems(), (item: ShelfItem) => {
-            GridItem() { this.coverCell(item) }
-          }, (item: ShelfItem) => item.id)
+      // 收藏 tab: 文件夹选择栏 + 管理按钮
+      if (this.tab === 3) {
+        Row({ space: 8 }) {
+          this.favFolderBar()
+          // 管理按钮
+          Row() {
+            SymbolGlyph($r('sys.symbol.square_grid_2x2')).fontSize(14)
+              .fontColor([this.manageMode ? PRIMARY : GRAY_500])
+            Text(this.manageMode ? '完成' : '管理').fontSize(FS_SMALL)
+              .fontColor(this.manageMode ? PRIMARY : GRAY_500).margin({ left: 4 })
+          }
+          .height(32).padding({ left: 10, right: 10 }).borderRadius(16)
+          .backgroundColor(this.manageMode ? PRIMARY_50 : GRAY_100)
+          .justifyContent(FlexAlign.Center)
+          .onClick(() => { this.toggleManage(); })
         }
-        .columnsTemplate(this.columns())
-        .columnsGap(12).rowsGap(12)
-        .width('100%').padding({ left: SPACE_3, right: SPACE_3 }).layoutWeight(1)
+        .width('92%').margin({ top: 4, bottom: 4 })
+      }
+
+      // 封面网格 / 空态
+      if (this.tab === 3) {
+        // 收藏 Tab: 使用 FavoriteItem 网格
+        if (this.favItems.length === 0) {
+          this.favEmptyView()
+        } else {
+          Grid() {
+            ForEach(this.favItems, (item: FavoriteItem) => {
+              GridItem() { this.favCoverCell(item) }
+            }, (item: FavoriteItem) => item.id)
+          }
+          .columnsTemplate(this.columns())
+          .columnsGap(12).rowsGap(12)
+          .width('100%').padding({ left: SPACE_3, right: SPACE_3 }).layoutWeight(1)
+        }
+      } else {
+        // 其他 Tab: 使用 ShelfItem 网格
+        if (this.currentItems().length === 0) {
+          this.emptyView()
+        } else {
+          Grid() {
+            ForEach(this.currentItems(), (item: ShelfItem) => {
+              GridItem() { this.coverCell(item) }
+            }, (item: ShelfItem) => item.id)
+          }
+          .columnsTemplate(this.columns())
+          .columnsGap(12).rowsGap(12)
+          .width('100%').padding({ left: SPACE_3, right: SPACE_3 }).layoutWeight(1)
+        }
       }
     }
     .width('100%').height('100%').backgroundColor(BG)

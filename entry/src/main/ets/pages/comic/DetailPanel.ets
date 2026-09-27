@@ -9,6 +9,7 @@ import { promptAction } from '@kit.ArkUI';
 import { ShelfItem, ShelfSourceType, ShelfChapter } from '../../model/ShelfItem';
 import { findShelfItem } from '../../model/DemoData';
 import { localBookStore } from '../../model/LocalBookStore';
+import { localFavoritesStore, LocalFavoritesStore, FavoriteItem } from '../../model/LocalFavoritesStore';
 import { persistItemMeta, persistWebFavorites } from '../../utils/FileImporter';
 import { PRIMARY, PRIMARY_50, GRAY_500, GRAY_900, GRAY_100, CARD, BG,
   MUTED_FG, SUCCESS, WARNING, RADIUS_SM, RADIUS_MD, RADIUS_LG, SPACE_2, SPACE_3, SPACE_4, FS_TITLE,
@@ -140,17 +141,27 @@ export struct DetailPanel {
     this.editingField = 0;
   }
 
-  /** 收藏切换: 本地书持久化 isFavorite; WEB 收藏条目点击=取消收藏并移出书架 */
+  /** 收藏切换: 本地书持久化 isFavorite + 同步 LocalFavoritesStore; WEB 收藏条目点击=取消收藏并移出书架 */
   toggleFavorite(item: ShelfItem): void {
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
     if (item.sourceType === ShelfSourceType.LOCAL) {
       item.isFavorite = !item.isFavorite;
       localBookStore.updateItem(item);
       persistItemMeta(ctx, item);
+      if (item.isFavorite) {
+        // 添加到 LocalFavoritesStore 默认文件夹
+        const favItem: FavoriteItem = LocalFavoritesStore.fromShelfItem(item, '', item.id);
+        localFavoritesStore.addComic('收藏', favItem);
+      } else {
+        // 从所有收藏文件夹移除
+        localFavoritesStore.removeFromAllFolders(item.id);
+      }
       promptAction.showToast({ message: item.isFavorite ? '已收藏' : '已取消收藏' });
     } else {
       localBookStore.removeItem(item.id);
       persistWebFavorites(ctx, localBookStore.all());
+      // WEB 书也从收藏文件夹移除
+      localFavoritesStore.removeFromAllFolders(item.id);
       promptAction.showToast({ message: '已取消收藏' });
       this.onBack();
     }
