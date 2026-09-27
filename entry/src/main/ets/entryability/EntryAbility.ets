@@ -19,6 +19,7 @@ import { window, display } from '@kit.ArkUI';
 import { restoreImported, restoreWebFavorites } from '../utils/FileImporter';
 import { jsSourceManager } from '../services/JsSourceManager';
 import { jsRuntime } from '../runtime/JsRuntime';
+import { diskCacheManager } from '../utils/DiskCacheManager';
 import { initBreakpoints, setFoldStatus, updateWindowSize } from '../utils/Breakpoints';
 
 const DOMAIN = 0x0000;
@@ -60,8 +61,10 @@ export default class EntryAbility extends UIAbility {
     restoreImported(this.context);
     // 恢复 WEB 收藏(书架收藏页签, filesDir/web_favorites.json)
     restoreWebFavorites(this.context);
-    // 恢复 WEB 收藏(书架收藏页签, filesDir/web_favorites.json)
-    restoreWebFavorites(this.context);
+    // 初始化图片磁盘缓存(读取索引, 清理过期/孤儿文件)
+    diskCacheManager.init(this.context).catch((e: Error) => {
+      hilog.error(DOMAIN, TAG, '磁盘缓存初始化失败: %{public}s', `${e}`);
+    });
     // 启动扫描已安装的 JS 漫画源
     jsSourceManager.scanFromFilesDir(this.context);
     // 初始化响应式断点

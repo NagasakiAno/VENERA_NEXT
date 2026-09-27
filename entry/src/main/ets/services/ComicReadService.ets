@@ -14,6 +14,10 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { httpClient, HttpMethod, ResponseType } from '../network/HttpClient';
 import { jsRuntime } from '../runtime/JsRuntime';
 import { imageBridge, ImageBuffer } from '../runtime/ImageBridge';
+import { diskCacheManager } from '../utils/DiskCacheManager';
+import { fileIo as fs } from '@kit.CoreFileKit';
+import { diskCacheManager } from '../utils/DiskCacheManager';
+import { fileIo as fs } from '@kit.CoreFileKit';
 
 const DOMAIN = 0x0000;
 const TAG = 'ComicReadService';
@@ -111,10 +115,35 @@ export class ComicReadService {
   async loadImage(sourceKey: string, comicId: string, epId: string,
                   url: string): Promise<image.PixelMap | null> {
     const cacheKey = sourceKey + '|' + epId + '|' + url;
+    // 1. 内存缓存命中 → 直接返回
     const hit = this.cache.get(cacheKey);
     if (hit !== undefined) {
       return hit;
     }
+    // 2. 磁盘缓存命中 → 读字节 → 解码 → 还原 → 写内存缓存
+    const diskPath = diskCacheManager.find(cacheKey);
+    if (diskPath !== null) {
+      const diskBytes = this.readDiskFile(diskPath);
+      if (diskBytes !== null) {
+        const raw = await decode(diskBytes);
+        if (raw !== null) {
+          const cfg = await this.loadConfig(sourceKey, comicId, epId, url);
+          let pm = await this.applyModify(sourceKey, raw, cfg.modifyImage);
+          if (pm === null) {
+            pm = await createFromPixels(raw);
+          }
+          if (pm !== null) {
+            this.putCache(cacheKey, pm);
+            hilog.info(DOMAIN, TAG, '磁盘缓存命中 %{public}d×%{public}d %{public}s',
+              raw.width, raw.height, truncate(url));
+            return pm;
+          }
+        }
+      }
+      // 磁盘缓存文件损坏, 删除该条目
+      diskCacheManager.delete(cacheKey);
+    }
+    // 3. 网络下载
     const cfg = await this.loadConfig(sourceKey, comicId, epId, url);
     // 源可以把「图片标识」换成真实地址(如 e-hentai 用页码换 URL), 对应原版 configs['url'] ?? imageKey
     const target = cfg.url.length > 0 ? cfg.url : url;
@@ -122,6 +151,10 @@ export class ComicReadService {
     if (bytes === null) {
       return null;
     }
+    // 写入磁盘缓存(原始字节, 非解码后像素)
+    diskCacheManager.write(cacheKey, bytes).catch((e: Error) => {
+      hilog.warn(DOMAIN, TAG, '磁盘缓存写入失败: %{public}s', `${e}`);
+    });
     const raw = await decode(bytes);
     if (raw === null) {
       return null;
@@ -140,13 +173,33 @@ export class ComicReadService {
     return pm;
   }
 
-  /** 清空缓存(退出阅读器时调用) */
+  /** 清空内存缓存(退出阅读器时调用, 磁盘缓存保留) */
   clearCache(): void {
     this.cache.forEach((pm: image.PixelMap) => {
       pm.release();
     });
     this.cache.clear();
     this.cacheOrder = [];
+  }
+
+  /** 清空磁盘缓存(用户手动清理时调用) */
+  async clearDiskCache(): Promise<void> {
+    await diskCacheManager.clear();
+  }
+
+  /** 读取磁盘缓存文件为 Uint8Array */
+  private readDiskFile(path: string): Uint8Array | null {
+    try {
+      const file = fs.openSync(path, fs.OpenMode.READ_ONLY);
+      const stat = fs.statSync(path);
+      const buf = new ArrayBuffer(stat.size);
+      fs.readSync(file.fd, buf);
+      fs.closeSync(file);
+      return new Uint8Array(buf);
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, '读取磁盘缓存失败: %{public}s', `${e}`);
+      return null;
+    }
   }
 
   // ---------------------------------------------------------------- 内部
