@@ -170,6 +170,37 @@ export class SearchOptionDef {
 }
 
 /**
+ * 源的网络收藏能力(对应原版 FavoriteData, 由 enrichFavorites 真引擎解析产出;
+ * 源脚本以 favorites = {...} 声明)
+ */
+export class FavoriteMeta {
+  /** 收藏页标题 */
+  title: string = '';
+  /** 是否多文件夹 */
+  multiFolder: boolean = false;
+  /** loadComics(page, folder) 存在(分页) */
+  hasLoadComics: boolean = false;
+  /** loadNext(next, folder) 存在(游标) */
+  hasLoadNext: boolean = false;
+  /** loadFolders(comicId?) 存在(多文件夹必需) */
+  hasLoadFolders: boolean = false;
+  /** addOrDelFavorite 存在(收藏/取消收藏) */
+  hasAddOrDelFavorite: boolean = false;
+  hasAddFolder: boolean = false;
+  hasDeleteFolder: boolean = false;
+  /** "全部收藏"的文件夹 ID(空串表示无) */
+  allFavoritesId: string = '';
+  /** 收藏时间是否从旧到新(影响同步的拉取起点) */
+  isOldToNewSort: boolean = false;
+
+  /** 是否具备任一收藏能力 */
+  hasAny(): boolean {
+    return this.hasLoadComics || this.hasLoadNext || this.hasLoadFolders
+      || this.hasAddOrDelFavorite;
+  }
+}
+
+/**
  * 磁盘上 JS 漫画源的静态描述
  * A 阶段由正则解析产出, B 阶段由 JSVM 执行产出(接口一致)
  */
@@ -193,6 +224,8 @@ export class ComicSourceMeta {
   // 设置与账号
   settings: Map<string, SettingDef>;
   account: AccountMeta;
+  /** 网络收藏能力(enrichFavorites 解析产出) */
+  favorite: FavoriteMeta;
 
   // 发现页(真引擎解析产出)
   explorePages: ExplorePageInfo[];
@@ -233,6 +266,7 @@ export class ComicSourceMeta {
     this.hasAccount = false;
     this.settings = new Map<string, SettingDef>();
     this.account = new AccountMeta();
+    this.favorite = new FavoriteMeta();
     this.explorePages = [];
     this.idMatcher = '';
     this.category = new CategoryMeta();

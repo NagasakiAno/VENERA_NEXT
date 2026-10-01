@@ -198,6 +198,22 @@ export class LocalFavoritesStore {
     return true;
   }
 
+  /** 关联文件夹到网络源收藏夹（对应原版 linkFolderToNetwork） */
+  linkFolderToNetwork(folderName: string, sourceKey: string, folderId: string): boolean {
+    const folder = this.getFolder(folderName);
+    if (folder === null) {
+      hilog.warn(DOMAIN, TAG, '关联失败, 文件夹不存在: %{public}s', folderName);
+      return false;
+    }
+    folder.syncSourceKey = sourceKey;
+    folder.syncSourceFolder = folderId;
+    this.save();
+    this.notify();
+    hilog.info(DOMAIN, TAG, '文件夹 %{public}s 已关联源 %{public}s 夹 %{public}s',
+      folderName, sourceKey, folderId);
+    return true;
+  }
+
   /** 添加收藏到指定文件夹 */
   addComic(folderName: string, item: FavoriteItem): boolean {
     const folder = this.getFolder(folderName);

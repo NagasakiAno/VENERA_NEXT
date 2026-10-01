@@ -9,6 +9,8 @@ import { localFavoritesStore, FavoriteItem, FavoriteFolder } from '../../model/L
 import { downloadQueueStore, DownloadTask, DownloadStatus } from '../../model/DownloadQueueStore';
 import { downloadService } from '../../services/DownloadService';
 import { doImport, restoreImported, removeImported, restoreWebFavorites, persistWebFavorites } from '../../utils/FileImporter';
+import { networkFavoritesService, NetworkFavoriteFolder } from '../../services/NetworkFavoritesService';
+import { ComicSourceMeta } from '../../model/sources/ComicSourceMeta';
 import { promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { PRIMARY, PRIMARY_50, GRAY_500, GRAY_900, GRAY_100, CARD, BG,
@@ -51,6 +53,15 @@ export struct BookshelfPage {
   @State favSelectMode: boolean = false;
   @State favSelectedIds: string[] = [];
   @State favShowMoveDialog: boolean = false;
+  // 网络收藏同步
+  @State favShowSyncDialog: boolean = false;
+  @State favSyncStep: number = 0; // 0=选源, 1=选收藏夹
+  @State favSyncSources: ComicSourceMeta[] = [];
+  @State favSyncFolders: NetworkFavoriteFolder[] = [];
+  @State favSyncSourceKey: string = '';
+  @State favSyncLoading: boolean = false;
+  @State favSyncing: boolean = false;
+  @State favSyncProgress: string = '';
   // === 下载 Tab 专属状态 ===
   @State downloadTasks: DownloadTask[] = [];
 
@@ -162,6 +173,56 @@ export struct BookshelfPage {
   private switchSortMode(mode: number): void {
     this.favSortMode = mode;
     this.favShowSortMenu = false;
+  }
+
+  /** 打开网络收藏同步对话框: 列出已登录且有收藏能力的源 */
+  private openSyncDialog(): void {
+    this.favSyncSources = networkFavoritesService.availableSources();
+    this.favSyncStep = 0;
+    this.favSyncFolders = [];
+    this.favSyncProgress = '';
+    this.favSyncing = false;
+    this.favShowSyncDialog = true;
+  }
+
+  /** 选择源: 多文件夹源加载收藏夹列表, 否则直接同步全部 */
+  private async selectSyncSource(key: string): Promise<void> {
+    this.favSyncLoading = true;
+    try {
+      const fav = await networkFavoritesService.ensureCapabilities(key);
+      if (!fav.multiFolder || !fav.hasLoadFolders) {
+        // 单文件夹源: folderId 为空串, 本地文件夹用源名
+        this.favSyncLoading = false;
+        await this.startSync(key, '', '');
+        return;
+      }
+      this.favSyncFolders = await networkFavoritesService.loadFolders(key);
+      this.favSyncSourceKey = key;
+      this.favSyncStep = 1;
+    } catch (e) {
+      promptAction.showToast({ message: '加载失败: ' + (e as Error).message });
+    } finally {
+      this.favSyncLoading = false;
+    }
+  }
+
+  /** 执行同步: 网络收藏夹 → 本地文件夹(增量去重) */
+  private async startSync(key: string, folderId: string, folderName: string): Promise<void> {
+    this.favSyncing = true;
+    this.favSyncProgress = '同步中...';
+    try {
+      const res = await networkFavoritesService.syncFolderToLocal(key, folderId, folderName, 200,
+        (imported: number, pages: number, received: number) => {
+          this.favSyncProgress = '已接收 ' + received + ' 项 (新增 ' + imported + ')';
+        });
+      promptAction.showToast({ message: '同步完成: 新增 ' + res.imported + ' 项到"' + res.folderName + '"' });
+      this.favShowSyncDialog = false;
+      this.refreshFavState();
+    } catch (e) {
+      promptAction.showToast({ message: '同步失败: ' + (e as Error).message });
+    } finally {
+      this.favSyncing = false;
+    }
   }
 
   /** 进入/退出批量选择模式 */
@@ -760,6 +821,14 @@ export struct BookshelfPage {
             .onChange((value: string) => {
               this.favSearchKeyword = value;
             })
+          // 网络收藏同步按钮
+          Row() {
+            SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(14)
+              .fontColor([GRAY_500])
+          }
+          .width(32).height(32).borderRadius(16)
+          .backgroundColor(GRAY_100).justifyContent(FlexAlign.Center)
+          .onClick(() => { this.openSyncDialog(); })
           // 排序按钮
           Row() {
             SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(14)
@@ -850,6 +919,46 @@ export struct BookshelfPage {
               .onClick(() => { this.favShowMoveDialog = false; })
           }
           .width('60%').backgroundColor(CARD).borderRadius(RADIUS_LG)
+          .padding(16).shadow({ radius: 16, color: '#33000000', offsetX: 0, offsetY: 4 })
+          .margin({ top: 40 })
+        }
+
+        // 网络收藏同步对话框
+        if (this.favShowSyncDialog) {
+          Column({ space: 8 }) {
+            Text('网络收藏同步').fontSize(FS_SMALL).fontColor(GRAY_900).fontWeight(FontWeight.Medium)
+            if (this.favSyncing) {
+              Text(this.favSyncProgress).fontSize(FS_SMALL).fontColor(PRIMARY)
+            } else if (this.favSyncLoading) {
+              Text('加载中...').fontSize(FS_SMALL).fontColor(MUTED_FG)
+            } else if (this.favSyncStep === 0) {
+              // 第一步: 选择源
+              if (this.favSyncSources.length === 0) {
+                Text('暂无已登录且支持网络收藏的源\n请先在源详情页登录').fontSize(FS_SMALL).fontColor(MUTED_FG)
+              }
+              ForEach(this.favSyncSources, (meta: ComicSourceMeta) => {
+                Text(meta.name).fontSize(FS_SMALL).fontColor(PRIMARY)
+                  .width('100%').height(36).padding({ left: 16 })
+                  .backgroundColor(GRAY_100).borderRadius(8)
+                  .onClick(() => { this.selectSyncSource(meta.key); })
+              }, (meta: ComicSourceMeta) => meta.key)
+            } else {
+              // 第二步: 选择网络收藏夹
+              if (this.favSyncFolders.length === 0) {
+                Text('该源暂无收藏夹').fontSize(FS_SMALL).fontColor(MUTED_FG)
+              }
+              ForEach(this.favSyncFolders, (folder: NetworkFavoriteFolder) => {
+                Text(folder.name).fontSize(FS_SMALL).fontColor(PRIMARY)
+                  .width('100%').height(36).padding({ left: 16 })
+                  .backgroundColor(GRAY_100).borderRadius(8)
+                  .onClick(() => { this.startSync(this.favSyncSourceKey, folder.id, folder.name); })
+              }, (folder: NetworkFavoriteFolder) => folder.id)
+            }
+            Text('取消').fontSize(FS_SMALL).fontColor(GRAY_500)
+              .width('100%').height(36).padding({ left: 16 })
+              .onClick(() => { this.favShowSyncDialog = false; })
+          }
+          .width('70%').backgroundColor(CARD).borderRadius(RADIUS_LG)
           .padding(16).shadow({ radius: 16, color: '#33000000', offsetX: 0, offsetY: 4 })
           .margin({ top: 40 })
         }

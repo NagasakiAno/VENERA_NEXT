@@ -18,7 +18,7 @@ import { httpClient, HttpMethod, ResponseType } from '../network/HttpClient';
 import { cookieStore, Cookie } from '../network/CookieStore';
 import { comicSourceManager } from '../model/ComicSource';
 import { ComicSourceMeta, SettingDef, ExplorePageInfo, CategoryMeta, CategoryPart,
-  CategoryItem, CategoryTarget, SearchOptionDef } from '../model/sources/ComicSourceMeta';
+  CategoryItem, CategoryTarget, SearchOptionDef, FavoriteMeta } from '../model/sources/ComicSourceMeta';
 import { sourceDataStore } from '../services/SourceDataStore';
 import { htmlBridge, HtmlRequest } from './HtmlBridge';
 import { imageBridge } from './ImageBridge';
@@ -647,6 +647,163 @@ class JsRuntimeImpl {
   /** 是否已登录(以源数据中是否存在 account 为准) */
   isLogged(key: string): boolean {
     return sourceDataStore.get(key, 'account') !== null;
+  }
+
+  /**
+   * 重新登录(对应原版 reLogin): 用源数据中存储的 account [账号, 密码]
+   * 调用 account.login, 成功返回 true。无存储账号时返回 false。
+   */
+  async reLogin(key: string): Promise<boolean> {
+    const stored = sourceDataStore.get(key, 'account');
+    if (stored === null) {
+      hilog.warn(DOMAIN, TAG, '源 %{public}s 无存储账号, 无法 reLogin', key);
+      return false;
+    }
+    const arr = stored as Object[];
+    if (arr.length < 2) {
+      return false;
+    }
+    const account = typeof arr[0] === 'string' ? (arr[0] as string) : '';
+    const password = typeof arr[1] === 'string' ? (arr[1] as string) : '';
+    try {
+      const expr = '__m.account.login(' + JSON.stringify(account) + ',' + JSON.stringify(password) + ')';
+      await this.callSource(key, expr);
+      hilog.info(DOMAIN, TAG, '源 %{public}s reLogin 成功', key);
+      return true;
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, '源 %{public}s reLogin 失败: %{public}s', key, `${e}`);
+      return false;
+    }
+  }
+
+  /**
+   * retryZone(对应原版 parser.dart 的 retryZone):
+   * 调用 func, 若错误信息含 "Login expired" 则 reLogin 后重试一次。
+   * 未登录时直接抛 "Not login"(与原版语义一致)。
+   */
+  async retryZone(key: string, func: () => Promise<string>): Promise<string> {
+    if (!this.isLogged(key)) {
+      throw new Error('Not login');
+    }
+    try {
+      return await func();
+    } catch (e) {
+      const msg = `${e}`;
+      if (msg.indexOf('Login expired') < 0) {
+        throw new Error(msg);
+      }
+      const ok = await this.reLogin(key);
+      if (!ok) {
+        throw new Error('Login expired and re-login failed');
+      }
+      return await func();
+    }
+  }
+
+  /**
+   * 用真引擎解析源的 favorites 网络收藏能力(标题/多文件夹/加载器/收藏操作)。
+   * 对应原版 Dart 侧 FavoriteData: 源脚本以 favorites = {...} 声明。
+   * 源未声明 favorites 时 favorite.hasAny() 为 false。
+   */
+  async enrichFavorites(meta: ComicSourceMeta): Promise<void> {
+    await this.ensureLoaded(meta.key);
+    const keyJson = JSON.stringify(meta.key);
+    const code = '(function(){ const __m = ComicSource.sources[' + keyJson + '];'
+      + ' const __f = __m.favorites;'
+      + ' if (!__f) { return null; }'
+      + ' return {'
+      + '   title: __f.title === undefined ? "" : String(__f.title),'
+      + '   multiFolder: __f.multiFolder === true,'
+      + '   hasLoadComics: typeof __f.loadComics === "function",'
+      + '   hasLoadNext: typeof __f.loadNext === "function",'
+      + '   hasLoadFolders: typeof __f.loadFolders === "function",'
+      + '   hasAddOrDelFavorite: typeof __f.addOrDelFavorite === "function",'
+      + '   hasAddFolder: typeof __f.addFolder === "function",'
+      + '   hasDeleteFolder: typeof __f.deleteFolder === "function",'
+      + '   allFavoritesId: __f.allFavoritesId === undefined ? "" : String(__f.allFavoritesId),'
+      + '   isOldToNewSort: __f.isOldToNewSort === true'
+      + ' }; })()';
+    const raw = await this.evalJson<Object | null>(code, '<favorites:' + meta.key + '>');
+    const fav = new FavoriteMeta();
+    if (raw !== null && raw !== undefined) {
+      const r = raw as Record<string, Object>;
+      fav.title = typeof r['title'] === 'string' ? (r['title'] as string) : '';
+      fav.multiFolder = r['multiFolder'] === true;
+      fav.hasLoadComics = r['hasLoadComics'] === true;
+      fav.hasLoadNext = r['hasLoadNext'] === true;
+      fav.hasLoadFolders = r['hasLoadFolders'] === true;
+      fav.hasAddOrDelFavorite = r['hasAddOrDelFavorite'] === true;
+      fav.hasAddFolder = r['hasAddFolder'] === true;
+      fav.hasDeleteFolder = r['hasDeleteFolder'] === true;
+      fav.allFavoritesId = typeof r['allFavoritesId'] === 'string' ? (r['allFavoritesId'] as string) : '';
+      fav.isOldToNewSort = r['isOldToNewSort'] === true;
+    }
+    meta.favorite = fav;
+    hilog.info(DOMAIN, TAG, '源 %{public}s 网络收藏: %{public}s, 多文件夹 %{public}s, 加载器 %{public}s',
+      meta.key, fav.hasAny() ? '有' : '无', fav.multiFolder ? '是' : '否',
+      fav.hasLoadComics ? 'loadComics' : (fav.hasLoadNext ? 'loadNext' : '无'));
+  }
+
+  // ============================================================ 网络收藏调用
+
+  /**
+   * 加载网络收藏列表(favorites.loadComics), 返回 {comics, maxPage} 的 JSON。
+   * folderId 为空串表示非多文件夹源。含 Login expired 自动重登重试。
+   */
+  async callFavoriteLoadComics(key: string, page: number, folderId: string): Promise<string> {
+    const folder = folderId.length === 0 ? 'null' : JSON.stringify(folderId);
+    return await this.retryZone(key, () => {
+      return this.callSource(key, '__m.favorites.loadComics(' + page + ',' + folder + ')');
+    });
+  }
+
+  /** 游标式收藏列表(favorites.loadNext), 返回 {comics, next} 的 JSON。含重试。 */
+  async callFavoriteLoadNext(key: string, next: string, folderId: string): Promise<string> {
+    const folder = folderId.length === 0 ? 'null' : JSON.stringify(folderId);
+    const nextArg = next.length === 0 ? 'null' : JSON.stringify(next);
+    return await this.retryZone(key, () => {
+      return this.callSource(key, '__m.favorites.loadNext(' + nextArg + ',' + folder + ')');
+    });
+  }
+
+  /**
+   * 加载收藏夹列表(favorites.loadFolders), 返回 {folders, favorited} 的 JSON。
+   * 新格式为 {folders: {id: name}, favorited: [id]}; 旧源可能直接返回 Map, 由调用方兼容。
+   * comicId 非空时同时返回包含该漫画的收藏夹。含重试。
+   */
+  async callFavoriteLoadFolders(key: string, comicId: string): Promise<string> {
+    const cid = comicId.length === 0 ? 'null' : JSON.stringify(comicId);
+    return await this.retryZone(key, () => {
+      return this.callSource(key, '__m.favorites.loadFolders(' + cid + ')');
+    });
+  }
+
+  /**
+   * 添加/取消网络收藏(favorites.addOrDelFavorite)。
+   * favId 为空时传 null。返回任意值表示成功。含重试。
+   */
+  async callFavoriteAddOrDel(key: string, comicId: string, folderId: string,
+                             isAdding: boolean, favId: string): Promise<string> {
+    const folder = folderId.length === 0 ? 'null' : JSON.stringify(folderId);
+    const fav = favId.length === 0 ? 'null' : JSON.stringify(favId);
+    return await this.retryZone(key, () => {
+      return this.callSource(key, '__m.favorites.addOrDelFavorite('
+        + JSON.stringify(comicId) + ',' + folder + ',' + String(isAdding) + ',' + fav + ')');
+    });
+  }
+
+  /** 新建网络收藏夹(favorites.addFolder)。源未实现时抛错。含重试。 */
+  async callFavoriteAddFolder(key: string, name: string): Promise<string> {
+    return await this.retryZone(key, () => {
+      return this.callSource(key, '__m.favorites.addFolder(' + JSON.stringify(name) + ')');
+    });
+  }
+
+  /** 删除网络收藏夹(favorites.deleteFolder)。源未实现时抛错。含重试。 */
+  async callFavoriteDeleteFolder(key: string, folderId: string): Promise<string> {
+    return await this.retryZone(key, () => {
+      return this.callSource(key, '__m.favorites.deleteFolder(' + JSON.stringify(folderId) + ')');
+    });
   }
 
   /** 当前登录账号名(账密登录时取首元素), 未登录返回空串 */

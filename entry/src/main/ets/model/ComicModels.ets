@@ -14,6 +14,11 @@ export class Comic {
   sourceKey: string;
   maxPage: number;
   language: string;
+  /**
+   * 收藏项 ID(仅当漫画来自网络收藏页时由源返回,
+   * 用于 addOrDelFavorite 的 favId 参数)
+   */
+  favoriteId: string;
 
   constructor(sourceKey: string, json: Record<string, Object>) {
     this.sourceKey = sourceKey;
@@ -25,6 +30,7 @@ export class Comic {
     this.description = json['description'] as string ?? '';
     this.maxPage = json['maxPage'] as number ?? 0;
     this.language = json['language'] as string ?? '';
+    this.favoriteId = json['favoriteId'] as string ?? '';
   }
 
   toString(): string {
