@@ -8,7 +8,7 @@ import { promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { image } from '@kit.ImageKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { Comic, ComicDetails } from '../../model/ComicModels';
+import { Comic, ComicDetails, Comment } from '../../model/ComicModels';
 import { ShelfItem, ShelfChapter, ShelfSourceType } from '../../model/ShelfItem';
 import { localBookStore } from '../../model/LocalBookStore';
 import { localFavoritesStore, FavoriteItem } from '../../model/LocalFavoritesStore';
@@ -18,6 +18,7 @@ import { ReaderChapter, ReaderPageItem, ReaderPageType } from '../../model/Reade
 import { comicDetailService } from '../../services/ComicDetailService';
 import { comicReadService } from '../../services/ComicReadService';
 import { readHistoryService, ReadHistoryItem } from '../../services/ReadHistoryService';
+import { commentService, CommentResult } from '../../services/CommentService';
 import { persistWebFavorites } from '../../utils/FileImporter';
 import { appSettings } from '../../model/AppSettings';
 import { ReaderSession } from './ReaderSession';
@@ -45,6 +46,70 @@ class TagItem {
   text: string = '';
 }
 
+/** 分组标签(namespace + 同组标签列表 + 颜色) */
+class TagGroup {
+  namespace: string = '';
+  items: string[] = [];
+  color: string = '';
+  bgColor: string = '';
+}
+
+/** namespace -> 颜色映射(低饱和半透明胶囊) */
+function tagGroupColor(ns: string): [string, string] {
+  // 返回 [textColor, bgColor(半透明)]
+  switch (ns) {
+    case '作者':
+    case 'Author':
+      return ['#FF145CDE', '#1A145CDE']; // 蓝色
+    case '汉化组':
+    case 'Translator':
+      return ['#FF52C41A', '#1A52C41A']; // 绿色
+    case '分类':
+    case 'Categories':
+    case 'Category':
+      return ['#FF722ED1', '#1A722ED1']; // 紫色
+    case '标签':
+    case 'Tags':
+    case 'Tag':
+      return ['#FFFA8C16', '#1AFA8C16']; // 橙色
+    case '上传者':
+    case 'Uploader':
+      return ['#FF13C2C2', '#1A13C2C2']; // 青色
+    case '语言':
+    case 'Language':
+      return ['#FFEB2F96', '#1AEB2F96']; // 粉色
+    case ' parody':
+    case 'Parody':
+      return ['#FF2F54EB', '#1A2F54EB']; // 深蓝
+    case 'character':
+    case 'Character':
+      return ['#FFA0D911', '#1AA0D911']; // 黄绿
+    case 'group':
+    case 'Group':
+      return ['#FFF5222D', '#1AF5222D']; // 红色
+    case 'artist':
+    case 'Artist':
+      return ['#FF1890FF', '#1A1890FF']; // 亮蓝
+    default:
+      return ['#FF909399', '#1A909399']; // 默认灰色
+  }
+}
+
+/** ComicDetails.tags(Map) -> 分组标签列表 */
+function buildTagGroups(d: ComicDetails): TagGroup[] {
+  const out: TagGroup[] = [];
+  d.tags.forEach((values: string[], ns: string) => {
+    const group = new TagGroup();
+    group.namespace = ns;
+    group.items = values;
+    const colors = tagGroupColor(ns);
+    group.color = colors[0];
+    group.bgColor = colors[1];
+    out.push(group);
+  });
+  return out;
+}
+
 @Component
 export struct ComicDetailPage {
   /** 呈现容器(ComicDetailSheet)换书时同步并自动重载 */
@@ -66,6 +131,7 @@ export struct ComicDetailPage {
   @State hasDetail: boolean = false;
   @State chapters: ChapterItem[] = [];
   @State tags: TagItem[] = [];
+  @State tagGroups: TagGroup[] = [];
   @State recommend: Comic[] = [];
   @State loading: boolean = true;
   @State errorMsg: string = '';
@@ -83,6 +149,14 @@ export struct ComicDetailPage {
   /** 当前阅读章节的图片地址(与 readerChapter.pages 下标对齐) */
   private readerUrls: string[] = [];
   private readerEpId: string = '';
+  // === 评论状态 ===
+  @State comments: Comment[] = [];
+  @State commentPage: number = 1;
+  @State commentMaxPage: number = 1;
+  @State commentLoading: boolean = false;
+  @State commentInput: string = '';
+  @State commentSending: boolean = false;
+  @State showCommentInput: boolean = false;
 
   aboutToAppear(): void {
     hilog.info(DOMAIN, TAG, '详情页创建 id=%{public}s', this.comicId);
@@ -110,6 +184,7 @@ export struct ComicDetailPage {
       this.hasDetail = true;
       this.chapters = buildChapters(d, this.reverseChapters);
       this.tags = buildTags(d);
+      this.tagGroups = buildTagGroups(d);
       this.recommend = d.recommend;
     } catch (e) {
       this.errorMsg = `${e}`;
@@ -120,6 +195,98 @@ export struct ComicDetailPage {
       // 详情就绪后读取该漫画的阅读进度与收藏状态
       this.progress = readHistoryService.find(this.sourceKey, this.currentId);
       this.isFaved = localBookStore.findById(this.webFavId()) !== null;
+      // 加载评论(异步, 不阻塞详情展示)
+      this.loadComments();
+    }
+  }
+
+  /** 加载评论列表 */
+  private async loadComments(): Promise<void> {
+    if (!this.hasDetail) {
+      return;
+    }
+    this.commentLoading = true;
+    this.comments = [];
+    this.commentPage = 1;
+    try {
+      const res = await commentService.loadComments(
+        this.sourceKey, this.currentId, this.detail.subId, 1, '');
+      this.comments = res.comments;
+      this.commentMaxPage = res.maxPage;
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, '加载评论失败: %{public}s', `${e}`);
+    } finally {
+      this.commentLoading = false;
+    }
+  }
+
+  /** 加载更多评论(下一页) */
+  private async loadMoreComments(): Promise<void> {
+    if (this.commentLoading || this.commentPage >= this.commentMaxPage) {
+      return;
+    }
+    this.commentLoading = true;
+    try {
+      const nextPage = this.commentPage + 1;
+      const res = await commentService.loadComments(
+        this.sourceKey, this.currentId, this.detail.subId, nextPage, '');
+      this.comments = [...this.comments, ...res.comments];
+      this.commentPage = nextPage;
+      this.commentMaxPage = res.maxPage;
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, '加载更多评论失败: %{public}s', `${e}`);
+    } finally {
+      this.commentLoading = false;
+    }
+  }
+
+  /** 发送评论 */
+  private async sendComment(): Promise<void> {
+    if (this.commentInput.trim().length === 0 || this.commentSending) {
+      return;
+    }
+    this.commentSending = true;
+    try {
+      await commentService.sendComment(
+        this.sourceKey, this.currentId, this.detail.subId, this.commentInput.trim(), '');
+      this.commentInput = '';
+      this.showCommentInput = false;
+      promptAction.showToast({ message: '评论已发送' });
+      // 重新加载评论
+      this.loadComments();
+    } catch (e) {
+      promptAction.showToast({ message: '发送失败: ' + `${e}` });
+    } finally {
+      this.commentSending = false;
+    }
+  }
+
+  /** 点赞/取消点赞评论 */
+  private async toggleCommentLike(comment: Comment): Promise<void> {
+    const newIsLiked = !comment.isLiked;
+    // 乐观更新: 先切换 UI 状态
+    const idx = this.comments.indexOf(comment);
+    if (idx >= 0) {
+      const updated = new Comment({});
+      updated.userName = comment.userName;
+      updated.avatar = comment.avatar;
+      updated.content = comment.content;
+      updated.time = comment.time;
+      updated.replyCount = comment.replyCount;
+      updated.id = comment.id;
+      updated.isLiked = newIsLiked;
+      updated.score = newIsLiked ? comment.score + 1 : Math.max(0, comment.score - 1);
+      this.comments[idx] = updated;
+    }
+    try {
+      await commentService.likeComment(
+        this.sourceKey, this.currentId, this.detail.subId, comment.id, newIsLiked);
+    } catch (e) {
+      // 回滚乐观更新
+      if (idx >= 0) {
+        this.comments[idx] = comment;
+      }
+      promptAction.showToast({ message: '操作失败' });
     }
   }
 
@@ -520,15 +687,27 @@ export struct ComicDetailPage {
   tagSection() {
     Column() {
       this.sectionTitle('标签')
-      Flex({ wrap: FlexWrap.Wrap }) {
-        ForEach(this.tags, (t: TagItem) => {
-          Text(t.text).fontSize(FS_SMALL).fontColor(GRAY_500)
-            .padding({ left: 10, right: 10, top: 4, bottom: 4 })
-            .backgroundColor(GRAY_100).borderRadius(12)
-            .margin({ right: 6, bottom: 6 })
-        }, (t: TagItem, i: number) => `tag#${i}#${t.text}`)
-      }
-      .width('100%').margin({ top: SPACE_2 })
+      // 按 namespace 分组展示, 每组用不同颜色的低饱和半透明胶囊
+      ForEach(this.tagGroups, (group: TagGroup) => {
+        Column({ space: 4 }) {
+          // namespace 标题
+          if (group.namespace.length > 0) {
+            Text(group.namespace).fontSize(FS_SMALL).fontColor(group.color)
+              .fontWeight(FontWeight.Medium).margin({ top: SPACE_2 })
+          }
+          // 标签胶囊
+          Flex({ wrap: FlexWrap.Wrap }) {
+            ForEach(group.items, (tag: string) => {
+              Text(tag).fontSize(FS_SMALL).fontColor(group.color)
+                .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+                .backgroundColor(group.bgColor).borderRadius(12)
+                .margin({ right: 6, bottom: 6 })
+            }, (tag: string, i: number) => `tg#${group.namespace}#${i}#${tag}`)
+          }
+          .width('100%')
+        }
+        .width('100%').alignItems(HorizontalAlign.Start)
+      }, (group: TagGroup) => `tgn#${group.namespace}`)
     }
     .width('100%').alignItems(HorizontalAlign.Start)
   }
@@ -673,6 +852,150 @@ export struct ComicDetailPage {
   }
 
   @Builder
+  commentSection() {
+    Column() {
+      // 标题行 + 发评论按钮
+      Row() {
+        Text('评论').fontSize(FS_SECTION).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
+        if (this.detail.commentCount > 0) {
+          Text(`${this.detail.commentCount}`).fontSize(FS_SMALL).fontColor(MUTED_FG)
+            .margin({ left: 6 })
+        }
+        Blank()
+        Text('发评论').fontSize(FS_SMALL).fontColor(PRIMARY)
+          .onClick(() => {
+            this.showCommentInput = !this.showCommentInput;
+          })
+      }
+      .width('100%').margin({ top: SPACE_4 })
+
+      // 发评论输入框
+      if (this.showCommentInput) {
+        Column({ space: 8 }) {
+          TextArea({ placeholder: '写下你的评论...', text: this.commentInput })
+            .fontSize(FS_BODY).fontColor(GRAY_900)
+            .backgroundColor(GRAY_100).borderRadius(RADIUS_MD)
+            .width('100%').height(80)
+            .onChange((value: string) => {
+              this.commentInput = value;
+            })
+          Row() {
+            Blank()
+            Text(this.commentSending ? '发送中...' : '发送')
+              .fontSize(FS_SMALL).fontColor(this.commentSending ? MUTED_FG : CARD)
+              .height(32).padding({ left: 16, right: 16 }).borderRadius(16)
+              .backgroundColor(this.commentSending ? GRAY_100 : PRIMARY)
+              .textAlign(TextAlign.Center)
+              .onClick(() => {
+                if (!this.commentSending) {
+                  this.sendComment();
+                }
+              })
+          }
+          .width('100%')
+        }
+        .width('100%').padding(SPACE_3)
+        .backgroundColor(CARD).borderRadius(RADIUS_MD).margin({ top: SPACE_2 })
+      }
+
+      // 评论列表
+      if (this.commentLoading && this.comments.length === 0) {
+        Row({ space: 8 }) {
+          LoadingProgress().width(20).height(20).color(PRIMARY)
+          Text('加载评论中...').fontSize(FS_SMALL).fontColor(MUTED_FG)
+        }
+        .width('100%').justifyContent(FlexAlign.Center).padding(SPACE_4)
+      } else if (this.comments.length === 0) {
+        Column({ space: 6 }) {
+          Text('暂无评论').fontSize(FS_SMALL).fontColor(MUTED_FG)
+        }
+        .width('100%').justifyContent(FlexAlign.Center).padding(SPACE_4)
+      } else {
+        Column() {
+          ForEach(this.comments, (c: Comment) => {
+            this.commentRow(c)
+          }, (c: Comment) => `cm#${c.id}`)
+        }
+        .width('100%').padding({ left: SPACE_3, right: SPACE_3 })
+        .backgroundColor(CARD).borderRadius(RADIUS_LG)
+        .margin({ top: SPACE_2 })
+
+        // 加载更多按钮
+        if (this.commentPage < this.commentMaxPage) {
+          Row() {
+            if (this.commentLoading) {
+              LoadingProgress().width(16).height(16).color(PRIMARY)
+              Text('加载中...').fontSize(FS_SMALL).fontColor(MUTED_FG).margin({ left: 6 })
+            } else {
+              Text('加载更多').fontSize(FS_SMALL).fontColor(PRIMARY)
+            }
+          }
+          .width('100%').justifyContent(FlexAlign.Center).padding(SPACE_3)
+          .onClick(() => {
+            if (!this.commentLoading) {
+              this.loadMoreComments();
+            }
+          })
+        }
+      }
+    }
+    .width('100%').alignItems(HorizontalAlign.Start)
+  }
+
+  /** 单条评论行 */
+  @Builder
+  commentRow(c: Comment) {
+    Row({ space: 10 }) {
+      // 头像
+      if (c.avatar.length > 0) {
+        Image(c.avatar).width(36).height(36).borderRadius(18)
+          .objectFit(ImageFit.Cover).backgroundColor(GRAY_100)
+      } else {
+        Column().width(36).height(36).borderRadius(18).backgroundColor(GRAY_100)
+      }
+
+      Column({ space: 4 }) {
+        // 用户名 + 时间
+        Row() {
+          Text(c.userName).fontSize(FS_SMALL).fontColor(GRAY_900).fontWeight(FontWeight.Medium)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+          if (c.time.length > 0) {
+            Text(c.time).fontSize(10).fontColor(MUTED_FG).margin({ left: 8 })
+              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+        }
+        .width('100%')
+
+        // 评论内容
+        Text(c.content).fontSize(FS_BODY).fontColor(GRAY_900).lineHeight(20)
+          .width('100%')
+
+        // 点赞 + 回复数
+        Row({ space: 12 }) {
+          Row({ space: 4 }) {
+            SymbolGlyph($r('sys.symbol.heart'))
+              .fontSize(14)
+              .fontColor([c.isLiked ? '#FFE8455E' : MUTED_FG])
+            Text(c.score > 0 ? c.score.toString() : '')
+              .fontSize(10).fontColor(c.isLiked ? '#FFE8455E' : MUTED_FG)
+          }
+          .onClick(() => {
+            this.toggleCommentLike(c);
+          })
+
+          if (c.replyCount > 0) {
+            Text(`${c.replyCount} 回复`).fontSize(10).fontColor(MUTED_FG)
+          }
+        }
+        .margin({ top: 2 })
+      }
+      .layoutWeight(1).alignItems(HorizontalAlign.Start)
+    }
+    .width('100%').padding({ top: 10, bottom: 10 })
+    .alignItems(VerticalAlign.Top)
+  }
+
+  @Builder
   body() {
     Scroll() {
       Column({ space: SPACE_4 }) {
@@ -681,7 +1004,7 @@ export struct ComicDetailPage {
           this.actionRow()
           this.metaRow(this.detail)
         }
-        if (this.tags.length > 0) {
+        if (this.tagGroups.length > 0) {
           this.tagSection()
         }
         if (this.hasDetail && this.detail.description.length > 0) {
@@ -697,6 +1020,9 @@ export struct ComicDetailPage {
         }
         if (this.recommend.length > 0) {
           this.recommendSection()
+        }
+        if (this.hasDetail) {
+          this.commentSection()
         }
       }
       .width('100%').padding({ left: SPACE_3, right: SPACE_3, bottom: SPACE_4 })

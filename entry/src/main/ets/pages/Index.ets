@@ -21,6 +21,8 @@ import { PRIMARY, GRAY_500, CARD, BG, FS_SMALL, RADIUS_LG, GRAY_100 } from '../u
 import { IS_WIDE, WIDTH_BP } from '../utils/Breakpoints';
 import { HdsTabs, HdsTabsController, hdsMaterial } from '@kit.UIDesignKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { comicSourceManager } from '../model/ComicSource';
+import { ComicSourceMeta } from '../model/sources/ComicSourceMeta';
 
 @Entry
 @Component
@@ -155,7 +157,13 @@ struct Index {
   portraitFrame() {
     HdsTabs({ controller: this.tabsController }) {
       TabContent() {
-        BookshelfPage({ onOpenDetail: (it: ShelfItem): void => this.openDetail(it) })
+        BookshelfPage({
+          onOpenDetail: (it: ShelfItem): void => this.openDetail(it),
+          onOpenWebFavorite: (sk: string, cid: string): void => {
+            const meta: ComicSourceMeta | null = comicSourceManager.findJsSource(sk);
+            this.openWebComic(sk, meta !== null ? meta.name : sk, cid);
+          }
+        })
       }.tabBar(this.hdsTab(0, '书架', $r('sys.symbol.square_grid_2x2')))
 
       TabContent() {
@@ -244,7 +252,13 @@ struct Index {
   wideContent() {
     Column() {
       if (this.currentIndex === 0) {
-        BookshelfPage({ onOpenDetail: (it: ShelfItem): void => this.openDetail(it) })
+        BookshelfPage({
+          onOpenDetail: (it: ShelfItem): void => this.openDetail(it),
+          onOpenWebFavorite: (sk: string, cid: string): void => {
+            const meta: ComicSourceMeta | null = comicSourceManager.findJsSource(sk);
+            this.openWebComic(sk, meta !== null ? meta.name : sk, cid);
+          }
+        })
           .transition(TransitionEffect.OPACITY
             .combine(TransitionEffect.translate({ y: 16 }))
             .animation({ duration: 260, curve: Curve.EaseOut }))

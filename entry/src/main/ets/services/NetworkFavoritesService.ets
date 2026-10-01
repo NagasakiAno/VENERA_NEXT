@@ -75,6 +75,24 @@ export class NetworkFavoritesService {
     return out;
   }
 
+  /**
+   * 已登录源列表(先懒加载解析收藏能力再过滤)。
+   * 源的 favorite 能力默认为空, 必须先 enrichFavorites 才能被 availableSources 选中。
+   */
+  async availableSourcesWithEnrich(): Promise<ComicSourceMeta[]> {
+    const metas = comicSourceManager.allJsSources();
+    for (let i = 0; i < metas.length; i++) {
+      if (jsRuntime.isLogged(metas[i].key) && !metas[i].favorite.hasAny()) {
+        try {
+          await this.ensureCapabilities(metas[i].key);
+        } catch (e) {
+          hilog.warn(DOMAIN, TAG, '源 %{public}s 收藏能力解析失败: %{public}s', metas[i].key, `${e}`);
+        }
+      }
+    }
+    return this.availableSources();
+  }
+
   /** 确保源的收藏能力已解析(懒加载), 返回能力描述 */
   async ensureCapabilities(key: string): Promise<FavoriteMeta> {
     const meta = comicSourceManager.findJsSource(key);

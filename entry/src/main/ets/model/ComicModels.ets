@@ -99,6 +99,29 @@ export class ComicChapters {
   }
 }
 
+/** 评论 */
+export class Comment {
+  userName: string = '';
+  avatar: string = '';
+  content: string = '';
+  time: string = '';
+  replyCount: number = 0;
+  id: string = '';
+  isLiked: boolean = false;
+  score: number = 0;
+
+  constructor(json: Record<string, Object>) {
+    this.userName = json['userName'] as string ?? '';
+    this.avatar = json['avatar'] as string ?? '';
+    this.content = json['content'] as string ?? '';
+    this.time = json['time'] as string ?? '';
+    this.replyCount = json['replyCount'] as number ?? 0;
+    this.id = json['id'] as string ?? '';
+    this.isLiked = json['isLiked'] as boolean ?? false;
+    this.score = json['score'] as number ?? 0;
+  }
+}
+
 /** 漫画详情 */
 export class ComicDetails {
   title: string;
@@ -117,6 +140,12 @@ export class ComicDetails {
   recommend: Comic[];
   uploader: string;
   likesCount: number;
+  /** 源返回的子 ID(用于评论等 API, 如 copy_manga 的 UUID) */
+  subId: string;
+  /** 评论数(源返回) */
+  commentCount: number;
+  /** 当前用户是否已点赞 */
+  isLiked: boolean;
 
   constructor(sourceKey: string, json: Record<string, Object>) {
     this.sourceKey = sourceKey;
@@ -152,6 +181,9 @@ export class ComicDetails {
     this.uploader = json['uploader'] as string ?? '';
     const likes = json['likesCount'];
     this.likesCount = typeof likes === 'number' ? likes as number : 0;
+    this.subId = json['subId'] as string ?? '';
+    this.commentCount = json['commentCount'] as number ?? 0;
+    this.isLiked = json['isLiked'] as boolean ?? false;
     // 补全 id 引用(此构造用于阅读链路)
     if (this.comicId.length === 0) {
       this.comicId = json['id'] as string ?? '';

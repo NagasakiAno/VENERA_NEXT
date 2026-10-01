@@ -1165,6 +1165,63 @@ class JsRuntimeImpl {
     return await this.callSource(page.sourceKey, expr);
   }
 
+  // ============================================================ 评论调用
+
+  /**
+   * 加载评论(comic.loadComments), 返回 {comments: Comment[], maxPage: number} 的 JSON。
+   * subId / replyTo 为空时传 null。
+   */
+  async callLoadComments(sourceKey: string, comicId: string, subId: string,
+                         page: number, replyTo: string): Promise<string> {
+    const sub = subId.length === 0 ? 'null' : JSON.stringify(subId);
+    const reply = replyTo.length === 0 ? 'null' : JSON.stringify(replyTo);
+    const expr = '(async () => {'
+      + ' const __c = __m.comic;'
+      + ' if (!__c || typeof __c.loadComments !== "function") { return null; }'
+      + ' const __r = await __c.loadComments(' + JSON.stringify(comicId) + ',' + sub + ','
+      + page + ',' + reply + ');'
+      + ' const __fix = (v) => {'
+      + '   if (v instanceof Map) {'
+      + '     const o = {}; v.forEach((vv, kk) => { o[String(kk)] = __fix(vv); }); return o; }'
+      + '   if (Array.isArray(v)) { return v.map(__fix); }'
+      + '   if (v !== null && typeof v === "object") {'
+      + '     const o = {}; for (const k in v) { o[k] = __fix(v[k]); } return o; }'
+      + '   return v === undefined ? null : v; };'
+      + ' return __fix(__r); })()';
+    return await this.callSource(sourceKey, expr);
+  }
+
+  /**
+   * 发送评论(comic.sendComment), 返回任意值表示成功。
+   * subId / replyTo 为空时传 null。源未实现时抛错。
+   */
+  async callSendComment(sourceKey: string, comicId: string, subId: string,
+                        content: string, replyTo: string): Promise<string> {
+    const sub = subId.length === 0 ? 'null' : JSON.stringify(subId);
+    const reply = replyTo.length === 0 ? 'null' : JSON.stringify(replyTo);
+    const expr = '(async () => {'
+      + ' const __c = __m.comic;'
+      + ' if (!__c || typeof __c.sendComment !== "function") { throw new Error("该源不支持发送评论"); }'
+      + ' return await __c.sendComment(' + JSON.stringify(comicId) + ',' + sub + ','
+      + JSON.stringify(content) + ',' + reply + '); })()';
+    return await this.callSource(sourceKey, expr);
+  }
+
+  /**
+   * 点赞评论(comic.likeComment), 返回任意值表示成功。
+   * subId 为空时传 null。源未实现时抛错。
+   */
+  async callLikeComment(sourceKey: string, comicId: string, subId: string,
+                        commentId: string, isLike: boolean): Promise<string> {
+    const sub = subId.length === 0 ? 'null' : JSON.stringify(subId);
+    const expr = '(async () => {'
+      + ' const __c = __m.comic;'
+      + ' if (!__c || typeof __c.likeComment !== "function") { throw new Error("该源不支持点赞评论"); }'
+      + ' return await __c.likeComment(' + JSON.stringify(comicId) + ',' + sub + ','
+      + JSON.stringify(commentId) + ',' + String(isLike) + '); })()';
+    return await this.callSource(sourceKey, expr);
+  }
+
   // ============================================================ sendMessage 分发
 
   /**

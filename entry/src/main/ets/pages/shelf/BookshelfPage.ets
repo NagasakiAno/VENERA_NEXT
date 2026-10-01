@@ -10,6 +10,7 @@ import { downloadQueueStore, DownloadTask, DownloadStatus } from '../../model/Do
 import { downloadService } from '../../services/DownloadService';
 import { doImport, restoreImported, removeImported, restoreWebFavorites, persistWebFavorites } from '../../utils/FileImporter';
 import { networkFavoritesService, NetworkFavoriteFolder } from '../../services/NetworkFavoritesService';
+import { readHistoryService, ReadHistoryItem } from '../../services/ReadHistoryService';
 import { ComicSourceMeta } from '../../model/sources/ComicSourceMeta';
 import { promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
@@ -23,6 +24,7 @@ export struct BookshelfPage {
   @StorageProp(IS_WIDE) isWide: boolean = false;
   @StorageProp(WIDTH_BP) widthBp: string = 'md';
   onOpenDetail: (item: ShelfItem) => void = () => {};
+  onOpenWebFavorite: (sourceKey: string, comicId: string) => void = () => {};
   @State tab: number = 0;
   // 本地书列表(响应式: 导入 + 恢复)
   @State localItems: ShelfItem[] = localBookStore.all();
@@ -62,6 +64,9 @@ export struct BookshelfPage {
   @State favSyncLoading: boolean = false;
   @State favSyncing: boolean = false;
   @State favSyncProgress: string = '';
+  // 浏览历史(WEB 源)
+  @State webHistoryItems: ReadHistoryItem[] = [];
+  @State showHistoryClearDialog: boolean = false;
   // === 下载 Tab 专属状态 ===
   @State downloadTasks: DownloadTask[] = [];
 
@@ -81,6 +86,7 @@ export struct BookshelfPage {
       this.refreshFavState();
     });
     this.refreshFavState();
+    this.refreshWebHistory();
     // 初始化下载队列 store
     downloadQueueStore.init(ctx);
     downloadQueueStore.subscribe(() => {
@@ -96,6 +102,11 @@ export struct BookshelfPage {
       this.favCurrentFolder = '收藏';
     }
     this.favItems = localFavoritesStore.getFolderComics(this.favCurrentFolder);
+  }
+
+  /** 刷新 WEB 阅读历史 */
+  private refreshWebHistory(): void {
+    this.webHistoryItems = readHistoryService.list();
   }
 
   /** 创建新文件夹 */
@@ -175,14 +186,21 @@ export struct BookshelfPage {
     this.favShowSortMenu = false;
   }
 
-  /** 打开网络收藏同步对话框: 列出已登录且有收藏能力的源 */
-  private openSyncDialog(): void {
-    this.favSyncSources = networkFavoritesService.availableSources();
+  /** 打开网络收藏同步对话框: 先懒加载解析已登录源的收藏能力, 再列出可用源 */
+  private async openSyncDialog(): Promise<void> {
+    this.favShowSyncDialog = true;
+    this.favSyncLoading = true;
     this.favSyncStep = 0;
     this.favSyncFolders = [];
     this.favSyncProgress = '';
     this.favSyncing = false;
-    this.favShowSyncDialog = true;
+    try {
+      this.favSyncSources = await networkFavoritesService.availableSourcesWithEnrich();
+    } catch (e) {
+      promptAction.showToast({ message: '加载源失败: ' + (e as Error).message });
+    } finally {
+      this.favSyncLoading = false;
+    }
   }
 
   /** 选择源: 多文件夹源加载收藏夹列表, 否则直接同步全部 */
@@ -457,6 +475,14 @@ export struct BookshelfPage {
     return `repeat(${Math.max(3, n)}, 1fr)`;
   }
 
+  /** 当前列数(数值, 用于计算 rowsTemplate) */
+  colCount(): number {
+    if (this.widthBp === 'xl') { return 7; }
+    if (this.widthBp === 'lg') { return 5; }
+    if (this.isWide) { return 4; }
+    return 3;
+  }
+
   /** 当前 Tab 数据（仅 tab 0/1 使用，下载和收藏有独立 UI） */
   currentItems(): ShelfItem[] {
     const all = localBookStore.all();
@@ -505,6 +531,16 @@ export struct BookshelfPage {
     Column({ space: 10 }) {
       SymbolGlyph($r('sys.symbol.square_grid_2x2')).fontSize(40).fontColor([GRAY_100])
       Text('暂无书籍，点击上方"导入"添加本地电子书').fontSize(FS_SMALL).fontColor(MUTED_FG)
+    }
+    .width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
+  }
+
+  /** 历史空态提示 */
+  @Builder
+  historyEmptyView() {
+    Column({ space: 10 }) {
+      SymbolGlyph($r('sys.symbol.clock')).fontSize(40).fontColor([GRAY_100])
+      Text('暂无浏览历史').fontSize(FS_SMALL).fontColor(MUTED_FG)
     }
     .width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
   }
@@ -586,12 +622,17 @@ export struct BookshelfPage {
       if (this.favSelectMode) {
         this.toggleFavSelect(item.id);
       } else if (!this.manageMode) {
-        // 从收藏项打开详情：构造 ShelfItem 并回调
-        const shelfItem = new ShelfItem(
-          item.id, item.title, item.cover, item.author, '', item.tags,
-          item.sourceType, [], true, 0, '', 0, '', [], '', null, false, ''
-        );
-        this.onOpenDetail(shelfItem);
+        // WEB 收藏项: 直接打开在线详情页(ComicDetailSheet), 支持章节加载与续读
+        if (item.sourceType === ShelfSourceType.WEB) {
+          this.onOpenWebFavorite(item.sourceKey, item.sourceComicId);
+        } else {
+          // 本地收藏项: 构造 ShelfItem 并回调打开 DetailPanel
+          const shelfItem = new ShelfItem(
+            item.id, item.title, item.cover, item.author, '', item.tags,
+            item.sourceType, [], true, 0, '', 0, '', [], '', null, false, ''
+          );
+          this.onOpenDetail(shelfItem);
+        }
       }
     })
   }
@@ -751,6 +792,71 @@ export struct BookshelfPage {
     .width('92%').margin({ top: 4, bottom: 4 })
   }
 
+  /** 历史 Tab 工具栏 */
+  @Builder
+  historyToolBar() {
+    Row({ space: 8 }) {
+      Text('浏览历史').fontSize(FS_SMALL).fontColor(GRAY_900).fontWeight(FontWeight.Medium)
+      Blank()
+      if (this.webHistoryItems.length > 0 || allWithRead(localBookStore.all()).length > 0) {
+        Text('清空').fontSize(FS_SMALL).fontColor(ERROR)
+          .onClick(() => {
+            promptAction.showDialog({
+              title: '清空浏览历史',
+              message: '确定清空所有浏览历史记录吗？',
+              buttons: [
+                { text: '取消', color: GRAY_500 },
+                { text: '清空', color: ERROR }
+              ]
+            }).then((res: promptAction.ShowDialogSuccessResponse) => {
+              if (res.index === 1) {
+                readHistoryService.clear();
+                this.refreshWebHistory();
+                promptAction.showToast({ message: '已清空浏览历史' });
+              }
+            }).catch((e: Error) => {});
+          })
+      }
+    }
+    .width('92%').margin({ top: 4, bottom: 4 })
+  }
+
+  /** WEB 历史封面格 */
+  @Builder
+  webHistoryCoverCell(item: ReadHistoryItem) {
+    Column() {
+      Stack({ alignContent: Alignment.BottomStart }) {
+        if (item.cover.length > 0) {
+          Image(item.cover).width('100%').aspectRatio(3.0 / 4.0).borderRadius(RADIUS_MD)
+            .objectFit(ImageFit.Cover).backgroundColor(GRAY_100)
+        } else {
+          Column().width('100%').aspectRatio(3.0 / 4.0).borderRadius(RADIUS_MD).backgroundColor(GRAY_100)
+        }
+        // WEB 角标
+        Text('WEB').fontSize(9).fontColor(CARD).backgroundColor('#80145CDE')
+          .borderRadius(4).padding({ left: 5, right: 5, top: 1, bottom: 1 }).margin(6)
+        // 进度角标
+        if (item.total > 0) {
+          Text(`${item.page + 1}/${item.total}`).fontSize(9).fontColor(CARD)
+            .backgroundColor('#99000000').borderRadius(4)
+            .padding({ left: 5, right: 5, top: 1, bottom: 1 }).margin(6)
+        }
+      }
+      .width('100%').aspectRatio(3.0 / 4.0).borderRadius(RADIUS_MD).clip(true)
+
+      Text(item.comicTitle).fontSize(FS_CAPTION).maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis }).fontColor(GRAY_900).margin({ top: 4 })
+      if (item.epTitle.length > 0) {
+        Text(item.epTitle).fontSize(10).maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis }).fontColor(MUTED_FG)
+      }
+    }
+    .width('100%')
+    .onClick(() => {
+      this.onOpenWebFavorite(item.sourceKey, item.comicId);
+    })
+  }
+
   build() {
     Column() {
       // 顶栏: SegmentButton 胶囊单选(显式颜色, 深色模式可读)
@@ -761,6 +867,9 @@ export struct BookshelfPage {
         onItemClicked: (index: number): void => {
           this.tab = index;
           this.segSelected = [index];
+          if (index === 1) {
+            this.refreshWebHistory();
+          }
           if (index === 3) {
             this.refreshFavState();
           }
@@ -772,6 +881,11 @@ export struct BookshelfPage {
       // 本地 tab 顶栏下方导入栏
       if (this.tab === 0) {
         this.importBar()
+      }
+
+      // 历史 tab: 浏览历史工具栏
+      if (this.tab === 1) {
+        this.historyToolBar()
       }
 
       // 下载 tab: 下载管理顶栏
@@ -991,13 +1105,52 @@ export struct BookshelfPage {
           .columnsGap(12).rowsGap(12)
           .width('100%').padding({ left: SPACE_3, right: SPACE_3 }).layoutWeight(1)
         }
+      } else if (this.tab === 1) {
+        // 历史 Tab: 本地阅读历史 + WEB 阅读历史
+        if (allWithRead(localBookStore.all()).length === 0 && this.webHistoryItems.length === 0) {
+          this.historyEmptyView()
+        } else {
+          Scroll() {
+            Column({ space: 12 }) {
+              // 本地阅读历史
+              if (allWithRead(localBookStore.all()).length > 0) {
+                Text('本地').fontSize(FS_SMALL).fontColor(MUTED_FG).width('100%')
+                Grid() {
+                  ForEach(allWithRead(localBookStore.all()), (item: ShelfItem) => {
+                    GridItem() { this.coverCell(item) }
+                  }, (item: ShelfItem) => item.id)
+                }
+                .columnsTemplate(this.columns())
+                .rowsTemplate(`repeat(${Math.ceil(allWithRead(localBookStore.all()).length / this.colCount())}, 1fr)`)
+                .columnsGap(12).rowsGap(12)
+                .width('100%')
+              }
+              // WEB 阅读历史
+              if (this.webHistoryItems.length > 0) {
+                Text('网络').fontSize(FS_SMALL).fontColor(MUTED_FG).width('100%')
+                Grid() {
+                  ForEach(this.webHistoryItems, (item: ReadHistoryItem) => {
+                    GridItem() { this.webHistoryCoverCell(item) }
+                  }, (item: ReadHistoryItem) => `wh#${item.sourceKey}#${item.comicId}`)
+                }
+                .columnsTemplate(this.columns())
+                .rowsTemplate(`repeat(${Math.ceil(this.webHistoryItems.length / this.colCount())}, 1fr)`)
+                .columnsGap(12).rowsGap(12)
+                .width('100%')
+              }
+            }
+            .width('100%').padding({ left: SPACE_3, right: SPACE_3, bottom: 16 })
+          }
+          .scrollBar(BarState.Off)
+          .layoutWeight(1)
+        }
       } else {
-        // 本地/历史 Tab: 使用 ShelfItem 网格
-        if (this.currentItems().length === 0) {
+        // 本地 Tab: 使用 ShelfItem 网格
+        if (this.localItems.length === 0) {
           this.emptyView()
         } else {
           Grid() {
-            ForEach(this.currentItems(), (item: ShelfItem) => {
+            ForEach(this.localItems, (item: ShelfItem) => {
               GridItem() { this.coverCell(item) }
             }, (item: ShelfItem) => item.id)
           }
