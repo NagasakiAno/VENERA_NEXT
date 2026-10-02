@@ -56,16 +56,11 @@ export struct BookshelfPage {
   @State favShowSortMenu: boolean = false;
   @State favSelectMode: boolean = false;
   @State favSelectedIds: string[] = [];
-  @State favShowMoveDialog: boolean = false;
   // 网络收藏同步
-  @State favShowSyncDialog: boolean = false;
-  @State favSyncStep: number = 0; // 0=选源, 1=选收藏夹
   @State favSyncSources: ComicSourceMeta[] = [];
   @State favSyncFolders: NetworkFavoriteFolder[] = [];
   @State favSyncSourceKey: string = '';
-  @State favSyncLoading: boolean = false;
   @State favSyncing: boolean = false;
-  @State favSyncProgress: string = '';
   // 浏览历史(WEB 源)
   @State webHistoryItems: ReadHistoryItem[] = [];
   @State showHistoryClearDialog: boolean = false;
@@ -201,55 +196,76 @@ export struct BookshelfPage {
     this.favShowSortMenu = false;
   }
 
-  /** 打开网络收藏同步对话框: 先懒加载解析已登录源的收藏能力, 再列出可用源 */
+  /** 打开网络收藏同步: 加载源列表后用原生 ActionMenu 展示 */
   private async openSyncDialog(): Promise<void> {
-    this.favShowSyncDialog = true;
-    this.favSyncLoading = true;
-    this.favSyncStep = 0;
     this.favSyncFolders = [];
-    this.favSyncProgress = '';
     this.favSyncing = false;
+    promptAction.showToast({ message: '加载中...' });
     try {
       this.favSyncSources = await networkFavoritesService.availableSourcesWithEnrich();
     } catch (e) {
       promptAction.showToast({ message: '加载源失败: ' + (e as Error).message });
-    } finally {
-      this.favSyncLoading = false;
+      return;
     }
+    if (this.favSyncSources.length === 0) {
+      promptAction.showToast({ message: '暂无已登录且支持网络收藏的源，请先在源详情页登录' });
+      return;
+    }
+    const sourceNames: string[] = this.favSyncSources.map(meta => meta.name);
+    TextPickerDialog.show({
+      range: sourceNames,
+      selected: 0,
+      onAccept: (value: TextPickerResult) => {
+        const idx = value.index as number;
+        if (idx >= 0 && idx < this.favSyncSources.length) {
+          this.selectSyncSource(this.favSyncSources[idx].key);
+        }
+      }
+    });
   }
 
   /** 选择源: 多文件夹源加载收藏夹列表, 否则直接同步全部 */
   private async selectSyncSource(key: string): Promise<void> {
-    this.favSyncLoading = true;
     try {
       const fav = await networkFavoritesService.ensureCapabilities(key);
       if (!fav.multiFolder || !fav.hasLoadFolders) {
-        // 单文件夹源: folderId 为空串, 本地文件夹用源名
-        this.favSyncLoading = false;
         await this.startSync(key, '', '');
         return;
       }
       this.favSyncFolders = await networkFavoritesService.loadFolders(key);
       this.favSyncSourceKey = key;
-      this.favSyncStep = 1;
     } catch (e) {
       promptAction.showToast({ message: '加载失败: ' + (e as Error).message });
-    } finally {
-      this.favSyncLoading = false;
+      return;
     }
+    if (this.favSyncFolders.length === 0) {
+      promptAction.showToast({ message: '该源暂无收藏夹' });
+      return;
+    }
+    const folderNames: string[] = this.favSyncFolders.map(folder => folder.name);
+    TextPickerDialog.show({
+      range: folderNames,
+      selected: 0,
+      onAccept: (value: TextPickerResult) => {
+        const idx = value.index as number;
+        if (idx >= 0 && idx < this.favSyncFolders.length) {
+          this.startSync(this.favSyncSourceKey, this.favSyncFolders[idx].id,
+            this.favSyncFolders[idx].name);
+        }
+      }
+    });
   }
 
   /** 执行同步: 网络收藏夹 → 本地文件夹(增量去重) */
   private async startSync(key: string, folderId: string, folderName: string): Promise<void> {
     this.favSyncing = true;
-    this.favSyncProgress = '同步中...';
+    promptAction.showToast({ message: '同步中...' });
     try {
       const res = await networkFavoritesService.syncFolderToLocal(key, folderId, folderName, 200,
         (imported: number, pages: number, received: number) => {
-          this.favSyncProgress = '已接收 ' + received + ' 项 (新增 ' + imported + ')';
+          promptAction.showToast({ message: '已接收 ' + received + ' 项 (新增 ' + imported + ')' });
         });
       promptAction.showToast({ message: '同步完成: 新增 ' + res.imported + ' 项到"' + res.folderName + '"' });
-      this.favShowSyncDialog = false;
       this.refreshFavState();
     } catch (e) {
       promptAction.showToast({ message: '同步失败: ' + (e as Error).message });
@@ -331,7 +347,6 @@ export struct BookshelfPage {
     }
     this.favSelectedIds = [];
     this.favSelectMode = false;
-    this.favShowMoveDialog = false;
     promptAction.showToast({ message: '已移动 ' + success + ' 项到"' + targetFolder + '"' });
   }
 
@@ -748,15 +763,23 @@ export struct BookshelfPage {
 
       Text(item.title).fontSize(FS_CAPTION).maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis }).fontColor(GRAY_900).margin({ top: 4 })
-      // TAG 标记: 最多显示2个标签
+      // TAG 标记: 最多显示2个标签, 超出显示 +N
       if (item.tags.length > 0) {
-        Row({ space: 4 }) {
+        Flex({ wrap: FlexWrap.Wrap }) {
           ForEach(item.tags.slice(0, 2), (tag: string) => {
-            Text(tag).fontSize(10).fontColor(PRIMARY)
-              .backgroundColor(PRIMARY_50).borderRadius(4)
-              .padding({ left: 4, right: 4, top: 1, bottom: 1 })
+            Text(tag).fontSize(9).fontColor(PRIMARY)
+              .backgroundColor(PRIMARY_50).borderRadius(8)
+              .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+              .margin({ right: 4, bottom: 2 })
               .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+              .constraintSize({ maxWidth: '70%' })
           }, (tag: string, index: number) => `tag#${index}#${tag}`)
+          if (item.tags.length > 2) {
+            Text(`+${item.tags.length - 2}`).fontSize(9).fontColor(MUTED_FG)
+              .backgroundColor(GRAY_100).borderRadius(8)
+              .padding({ left: 4, right: 4, top: 2, bottom: 2 })
+              .margin({ bottom: 2 })
+          }
         }
         .width('100%').margin({ top: 2 })
       }
@@ -1209,7 +1232,23 @@ export struct BookshelfPage {
             Text('全选').fontSize(FS_SMALL).fontColor(PRIMARY)
               .onClick(() => { this.favSelectAll(); })
             Text('移动').fontSize(FS_SMALL).fontColor(PRIMARY)
-              .onClick(() => { this.favShowMoveDialog = true; })
+              .onClick(() => {
+                const folders = this.favFolderNames.filter(n => n !== this.favCurrentFolder);
+                if (folders.length === 0) {
+                  promptAction.showToast({ message: '没有可移动的文件夹' });
+                  return;
+                }
+                TextPickerDialog.show({
+                  range: folders,
+                  selected: 0,
+                  onAccept: (value: TextPickerResult) => {
+                    const idx = value.index as number;
+                    if (idx >= 0 && idx < folders.length) {
+                      this.batchMoveFav(folders[idx]);
+                    }
+                  }
+                });
+              })
             Text('删除').fontSize(FS_SMALL).fontColor(ERROR)
               .onClick(() => { this.batchRemoveFav(); })
           }
@@ -1261,7 +1300,6 @@ export struct BookshelfPage {
                   }, (item: ShelfItem) => item.id)
                 }
                 .columnsTemplate(this.columns())
-                .rowsTemplate(`repeat(${Math.ceil(allWithRead(localBookStore.all()).length / this.colCount())}, 1fr)`)
                 .columnsGap(12).rowsGap(12)
                 .width('100%')
               }
@@ -1274,7 +1312,6 @@ export struct BookshelfPage {
                   }, (item: ReadHistoryItem) => `wh#${item.sourceKey}#${item.comicId}`)
                 }
                 .columnsTemplate(this.columns())
-                .rowsTemplate(`repeat(${Math.ceil(this.webHistoryItems.length / this.colCount())}, 1fr)`)
                 .columnsGap(12).rowsGap(12)
                 .width('100%')
               }
@@ -1300,7 +1337,6 @@ export struct BookshelfPage {
                   }, (item: ShelfItem) => item.id)
                 }
                 .columnsTemplate(this.columns())
-                .rowsTemplate(`repeat(${Math.ceil(this.localOnlyItems().length / this.colCount())}, 1fr)`)
                 .columnsGap(12).rowsGap(12)
                 .width('100%')
               }
@@ -1313,7 +1349,6 @@ export struct BookshelfPage {
                   }, (task: DownloadTask) => `dl#${task.id}`)
                 }
                 .columnsTemplate(this.columns())
-                .rowsTemplate(`repeat(${Math.ceil(this.completedDownloads().length / this.colCount())}, 1fr)`)
                 .columnsGap(12).rowsGap(12)
                 .width('100%')
               }
@@ -1326,77 +1361,6 @@ export struct BookshelfPage {
       }
       }
       .width('100%').height('100%').backgroundColor(BG)
-
-      // === Overlay 弹窗层 ===
-
-      // 移动到文件夹弹窗
-      if (this.favShowMoveDialog) {
-        Column() {
-          Column({ space: 8 }) {
-            Text('移动到文件夹').fontSize(FS_SMALL).fontColor(GRAY_900).fontWeight(FontWeight.Medium)
-            ForEach(this.favFolderNames, (name: string) => {
-              if (name !== this.favCurrentFolder) {
-                Text(name).fontSize(FS_SMALL).fontColor(PRIMARY)
-                  .width('100%').height(36).padding({ left: 16 })
-                  .backgroundColor(GRAY_100).borderRadius(8)
-                  .onClick(() => { this.batchMoveFav(name); })
-              }
-            }, (name: string) => name)
-            Text('取消').fontSize(FS_SMALL).fontColor(GRAY_500)
-              .width('100%').height(36).padding({ left: 16 })
-              .onClick(() => { this.favShowMoveDialog = false; })
-          }
-          .width('70%').backgroundColor(CARD).borderRadius(RADIUS_LG)
-          .padding(16).shadow({ radius: 16, color: '#33000000', offsetX: 0, offsetY: 4 })
-        }
-        .width('100%').height('100%')
-        .backgroundColor('#66000000')
-        .justifyContent(FlexAlign.Center)
-        .onClick(() => { this.favShowMoveDialog = false; })
-      }
-
-      // 网络收藏同步弹窗
-      if (this.favShowSyncDialog) {
-        Column() {
-          Column({ space: 8 }) {
-            Text('网络收藏同步').fontSize(FS_SMALL).fontColor(GRAY_900).fontWeight(FontWeight.Medium)
-            if (this.favSyncing) {
-              Text(this.favSyncProgress).fontSize(FS_SMALL).fontColor(PRIMARY)
-            } else if (this.favSyncLoading) {
-              Text('加载中...').fontSize(FS_SMALL).fontColor(MUTED_FG)
-            } else if (this.favSyncStep === 0) {
-              if (this.favSyncSources.length === 0) {
-                Text('暂无已登录且支持网络收藏的源\n请先在源详情页登录').fontSize(FS_SMALL).fontColor(MUTED_FG)
-              }
-              ForEach(this.favSyncSources, (meta: ComicSourceMeta) => {
-                Text(meta.name).fontSize(FS_SMALL).fontColor(PRIMARY)
-                  .width('100%').height(36).padding({ left: 16 })
-                  .backgroundColor(GRAY_100).borderRadius(8)
-                  .onClick(() => { this.selectSyncSource(meta.key); })
-              }, (meta: ComicSourceMeta) => meta.key)
-            } else {
-              if (this.favSyncFolders.length === 0) {
-                Text('该源暂无收藏夹').fontSize(FS_SMALL).fontColor(MUTED_FG)
-              }
-              ForEach(this.favSyncFolders, (folder: NetworkFavoriteFolder) => {
-                Text(folder.name).fontSize(FS_SMALL).fontColor(PRIMARY)
-                  .width('100%').height(36).padding({ left: 16 })
-                  .backgroundColor(GRAY_100).borderRadius(8)
-                  .onClick(() => { this.startSync(this.favSyncSourceKey, folder.id, folder.name); })
-              }, (folder: NetworkFavoriteFolder) => folder.id)
-            }
-            Text('取消').fontSize(FS_SMALL).fontColor(GRAY_500)
-              .width('100%').height(36).padding({ left: 16 })
-              .onClick(() => { this.favShowSyncDialog = false; })
-          }
-          .width('75%').backgroundColor(CARD).borderRadius(RADIUS_LG)
-          .padding(16).shadow({ radius: 16, color: '#33000000', offsetX: 0, offsetY: 4 })
-        }
-        .width('100%').height('100%')
-        .backgroundColor('#66000000')
-        .justifyContent(FlexAlign.Center)
-        .onClick(() => { this.favShowSyncDialog = false; })
-      }
     }
     .width('100%').height('100%')
   }

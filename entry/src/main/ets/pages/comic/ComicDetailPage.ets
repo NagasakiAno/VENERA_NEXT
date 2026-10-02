@@ -157,6 +157,10 @@ export struct ComicDetailPage {
   @State commentInput: string = '';
   @State commentSending: boolean = false;
   @State showCommentInput: boolean = false;
+  // === 回复展开状态 ===
+  @State expandedReplyId: string = '';
+  @State replyMap: Map<string, Comment[]> = new Map();
+  @State replyLoadingId: string = '';
 
   aboutToAppear(): void {
     hilog.info(DOMAIN, TAG, '详情页创建 id=%{public}s', this.comicId);
@@ -287,6 +291,28 @@ export struct ComicDetailPage {
         this.comments[idx] = comment;
       }
       promptAction.showToast({ message: '操作失败' });
+    }
+  }
+
+  /** 展开/收起回复列表 */
+  private async toggleReplyExpansion(c: Comment): Promise<void> {
+    if (this.expandedReplyId === c.id) {
+      this.expandedReplyId = '';
+      return;
+    }
+    this.expandedReplyId = c.id;
+    if (!this.replyMap.has(c.id)) {
+      this.replyLoadingId = c.id;
+      try {
+        const res = await commentService.loadComments(
+          this.sourceKey, this.currentId, this.detail.subId, 1, c.id);
+        this.replyMap.set(c.id, res.comments);
+      } catch (e) {
+        promptAction.showToast({ message: '加载回复失败' });
+        this.expandedReplyId = '';
+      } finally {
+        this.replyLoadingId = '';
+      }
     }
   }
 
@@ -914,7 +940,7 @@ export struct ComicDetailPage {
         Column() {
           ForEach(this.comments, (c: Comment, index: number) => {
             this.commentRow(c)
-          }, (c: Comment, index: number) => `cm#${index}#${c.id}`)
+          }, (c: Comment, index: number) => `cm#${index}#${c.id}#${c.isLiked}#${c.score}`)
         }
         .width('100%').padding({ left: SPACE_3, right: SPACE_3 })
         .backgroundColor(CARD).borderRadius(RADIUS_LG)
@@ -984,10 +1010,53 @@ export struct ComicDetailPage {
           })
 
           if (c.replyCount > 0) {
-            Text(`${c.replyCount} 回复`).fontSize(10).fontColor(MUTED_FG)
+            Row({ space: 4 }) {
+              SymbolGlyph($r('sys.symbol.chevron_right'))
+                .fontSize(10)
+                .fontColor([this.expandedReplyId === c.id ? PRIMARY : MUTED_FG])
+              Text(`${c.replyCount} 回复`).fontSize(10)
+                .fontColor(this.expandedReplyId === c.id ? PRIMARY : MUTED_FG)
+            }
+            .onClick(() => {
+              this.toggleReplyExpansion(c);
+            })
           }
         }
         .margin({ top: 2 })
+
+        // 回复列表(展开时显示)
+        if (this.expandedReplyId === c.id) {
+          if (this.replyLoadingId === c.id) {
+            Row({ space: 6 }) {
+              LoadingProgress().width(14).height(14).color(PRIMARY)
+              Text('加载回复中...').fontSize(10).fontColor(MUTED_FG)
+            }
+            .width('100%').padding({ left: 8, top: 4 })
+          } else {
+            Column({ space: 6 }) {
+              ForEach(this.replyMap.get(c.id) ?? [], (reply: Comment, rIdx: number) => {
+                Row({ space: 8 }) {
+                  if (reply.avatar.length > 0) {
+                    Image(reply.avatar).width(24).height(24).borderRadius(12)
+                      .objectFit(ImageFit.Cover).backgroundColor(GRAY_100)
+                  } else {
+                    Column().width(24).height(24).borderRadius(12).backgroundColor(GRAY_100)
+                  }
+                  Column({ space: 2 }) {
+                    Text(reply.userName).fontSize(10).fontColor(GRAY_900).fontWeight(FontWeight.Medium)
+                      .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                    Text(reply.content).fontSize(11).fontColor(GRAY_900).lineHeight(16)
+                      .width('100%')
+                  }
+                  .layoutWeight(1).alignItems(HorizontalAlign.Start)
+                }
+                .width('100%')
+              }, (reply: Comment, rIdx: number) => `reply#${rIdx}#${reply.id}`)
+            }
+            .width('100%').padding({ left: 8, top: 4, bottom: 4 })
+            .backgroundColor(GRAY_100).borderRadius(RADIUS_MD)
+          }
+        }
       }
       .layoutWeight(1).alignItems(HorizontalAlign.Start)
     }
@@ -1020,6 +1089,9 @@ export struct ComicDetailPage {
         }
         if (this.recommend.length > 0) {
           this.recommendSection()
+        }
+        if (this.hasDetail) {
+          this.commentSection()
         }
         if (this.hasDetail) {
           this.commentSection()
