@@ -273,12 +273,14 @@ export class NetworkFavoritesService {
 
   /**
    * 本地文件夹命名与冲突检查(对应原版逻辑):
-   * 名称 = 网络收藏夹名或源名; 已存在且未关联 → 冲突; 已关联 → 复用; 不存在 → 创建并关联。
+   * 名称 = 源名 + 网络收藏夹名(多文件夹源) 或 源名(单文件夹源);
+   * 已存在且未关联 → 冲突; 已关联 → 复用; 不存在 → 创建并关联。
    */
   private resolveLocalFolderName(key: string, folderId: string,
                                  folderName: string, sourceName: string): string {
     const fid = folderId.length === 0 ? '' : folderId;
-    const resultName = folderName.length > 0 ? folderName : sourceName;
+    // 多文件夹源: 文件夹名加源名前缀, 避免不同源的 "全部" 等同名文件夹混淆
+    const resultName = folderName.length > 0 ? `${sourceName} - ${folderName}` : sourceName;
     const existing = localFavoritesStore.getFolder(resultName);
     if (existing === null) {
       localFavoritesStore.createFolder(resultName);

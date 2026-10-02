@@ -43,6 +43,8 @@ export class DownloadTask {
   title: string = '';
   /** 漫画标题（展示用） */
   comicTitle: string = '';
+  /** 漫画封面URL（展示用） */
+  cover: string = '';
   status: DownloadStatus = DownloadStatus.PENDING;
   /** 总图片数 */
   totalImages: number = 0;
@@ -58,13 +60,14 @@ export class DownloadTask {
   errorMsg: string = '';
 
   constructor(id: string, sourceKey: string, comicId: string, epId: string,
-    title: string, comicTitle: string) {
+    title: string, comicTitle: string, cover: string = '') {
     this.id = id;
     this.sourceKey = sourceKey;
     this.comicId = comicId;
     this.epId = epId;
     this.title = title;
     this.comicTitle = comicTitle;
+    this.cover = cover;
     this.status = DownloadStatus.PENDING;
     this.totalImages = 0;
     this.downloadedImages = 0;
@@ -87,6 +90,7 @@ interface DownloadTaskPersist {
   epId: string;
   title: string;
   comicTitle: string;
+  cover: string;
   status: number;
   totalImages: number;
   downloadedImages: number;
@@ -205,11 +209,17 @@ class DownloadQueueStore {
   updateStatus(id: string, status: DownloadStatus): void {
     for (let i = 0; i < this.tasks.length; i++) {
       if (this.tasks[i].id === id) {
-        this.tasks[i].status = status;
-        if (status === DownloadStatus.COMPLETED) {
-          this.tasks[i].completedTime = Date.now();
-          this.tasks[i].progress = 100;
-        }
+        const old = this.tasks[i];
+        const updated = new DownloadTask(old.id, old.sourceKey, old.comicId, old.epId,
+          old.title, old.comicTitle, old.cover);
+        updated.status = status;
+        updated.totalImages = old.totalImages;
+        updated.downloadedImages = old.downloadedImages;
+        updated.progress = status === DownloadStatus.COMPLETED ? 100 : old.progress;
+        updated.addedTime = old.addedTime;
+        updated.completedTime = status === DownloadStatus.COMPLETED ? Date.now() : old.completedTime;
+        updated.errorMsg = old.errorMsg;
+        this.tasks[i] = updated;
         break;
       }
     }
@@ -221,11 +231,18 @@ class DownloadQueueStore {
   updateProgress(id: string, downloaded: number, total: number): void {
     for (let i = 0; i < this.tasks.length; i++) {
       if (this.tasks[i].id === id) {
-        this.tasks[i].downloadedImages = downloaded;
-        this.tasks[i].totalImages = total;
-        if (total > 0) {
-          this.tasks[i].progress = Math.round(downloaded * 100 / total);
-        }
+        // 创建新对象替换旧对象, 确保 @State ForEach 检测到变化并重新渲染
+        const old = this.tasks[i];
+        const updated = new DownloadTask(old.id, old.sourceKey, old.comicId, old.epId,
+          old.title, old.comicTitle, old.cover);
+        updated.status = old.status;
+        updated.totalImages = total;
+        updated.downloadedImages = downloaded;
+        updated.progress = total > 0 ? Math.round(downloaded * 100 / total) : 0;
+        updated.addedTime = old.addedTime;
+        updated.completedTime = old.completedTime;
+        updated.errorMsg = old.errorMsg;
+        this.tasks[i] = updated;
         break;
       }
     }
@@ -236,7 +253,17 @@ class DownloadQueueStore {
   updateError(id: string, errorMsg: string): void {
     for (let i = 0; i < this.tasks.length; i++) {
       if (this.tasks[i].id === id) {
-        this.tasks[i].errorMsg = errorMsg;
+        const old = this.tasks[i];
+        const updated = new DownloadTask(old.id, old.sourceKey, old.comicId, old.epId,
+          old.title, old.comicTitle, old.cover);
+        updated.status = old.status;
+        updated.totalImages = old.totalImages;
+        updated.downloadedImages = old.downloadedImages;
+        updated.progress = old.progress;
+        updated.addedTime = old.addedTime;
+        updated.completedTime = old.completedTime;
+        updated.errorMsg = errorMsg;
+        this.tasks[i] = updated;
         break;
       }
     }
@@ -324,7 +351,7 @@ class DownloadQueueStore {
       for (let i = 0; i < data.tasks.length; i++) {
         const tp = data.tasks[i];
         const task = new DownloadTask(tp.id, tp.sourceKey, tp.comicId, tp.epId,
-          tp.title, tp.comicTitle);
+          tp.title, tp.comicTitle, tp.cover ?? '');
         task.status = tp.status as DownloadStatus;
         task.totalImages = tp.totalImages;
         task.downloadedImages = tp.downloadedImages;
@@ -362,6 +389,7 @@ class DownloadQueueStore {
           epId: task.epId,
           title: task.title,
           comicTitle: task.comicTitle,
+          cover: task.cover,
           status: task.status,
           totalImages: task.totalImages,
           downloadedImages: task.downloadedImages,

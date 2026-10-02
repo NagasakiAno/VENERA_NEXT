@@ -566,7 +566,7 @@ export struct ComicDetailPage {
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
         }
         .height(48).layoutWeight(1).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
-        .backgroundColor(PRIMARY_50)
+        .backgroundColor(PRIMARY)
         .onClick(() => {
           this.continueReading();
         })
@@ -574,10 +574,10 @@ export struct ComicDetailPage {
 
       Column() {
         Text(this.progress !== null ? '从头阅读' : '开始阅读')
-          .fontSize(15).fontColor(CARD).fontWeight(FontWeight.Medium)
+          .fontSize(15).fontColor(PRIMARY).fontWeight(FontWeight.Medium)
       }
       .height(48).layoutWeight(1).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
-      .backgroundColor(PRIMARY)
+      .backgroundColor(PRIMARY_50)
       .onClick(() => {
         this.readFromStart();
       })
@@ -625,7 +625,7 @@ export struct ComicDetailPage {
       const c = this.chapters[i];
       const taskId = this.sourceKey + '|' + this.currentId + '|' + c.id;
       const task = new DownloadTask(taskId, this.sourceKey, this.currentId, c.id,
-        c.title.length > 0 ? c.title : c.id, this.detail.title);
+        c.title.length > 0 ? c.title : c.id, this.detail.title, this.detail.cover);
       if (downloadQueueStore.addTask(task)) {
         added++;
       }
@@ -912,9 +912,9 @@ export struct ComicDetailPage {
         .width('100%').justifyContent(FlexAlign.Center).padding(SPACE_4)
       } else {
         Column() {
-          ForEach(this.comments, (c: Comment) => {
+          ForEach(this.comments, (c: Comment, index: number) => {
             this.commentRow(c)
-          }, (c: Comment) => `cm#${c.id}`)
+          }, (c: Comment, index: number) => `cm#${index}#${c.id}`)
         }
         .width('100%').padding({ left: SPACE_3, right: SPACE_3 })
         .backgroundColor(CARD).borderRadius(RADIUS_LG)

@@ -72,7 +72,12 @@ export class CommentService {
       for (let i = 0; i < arr.length; i++) {
         const item = arr[i] as Record<string, Object>;
         if (item !== null && item !== undefined) {
-          result.comments.push(new Comment(item));
+          const c = new Comment(item);
+          // 源可能不返回 id, 生成唯一 ID 避免 ForEach key 冲突
+          if (c.id.length === 0) {
+            c.id = `${sourceKey}_${comicId}_${page}_${i}`;
+          }
+          result.comments.push(c);
         }
       }
     }
