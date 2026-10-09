@@ -358,7 +358,7 @@ export function parse(js: string, filePath: string, fileName: string): ComicSour
   // 5. account
   if (meta.hasAccount) {
     const acc = new AccountMeta();
-    acc.hasLogin = js.indexOf('login(') >= 0 || js.indexOf('login ') >= 0
+    acc.hasLogin = js.indexOf('login(') >= 0 || js.indexOf('login (') >= 0
       || js.indexOf('login:') >= 0 || js.indexOf('login :') >= 0;
     acc.loginUrl = extractStringField(js, 'login', ':');
     // loginWithWebview / loginWithCookies 均为对象, 用括号配平提取(避免未转义 { 触发正则错误)
@@ -367,7 +367,20 @@ export function parse(js: string, filePath: string, fileName: string): ComicSour
     if (webObj.length > 0) {
       acc.webviewUrl = extractStringField(webObj, 'url', ':');
     }
-    acc.hasCookiesValidate = extractObject(js, 'loginWithCookies').length > 0;
+    const cookiesObj = extractObject(js, 'loginWithCookies');
+    acc.hasCookiesValidate = cookiesObj.length > 0;
+    if (cookiesObj.length > 0) {
+      // 从 loginWithCookies 对象中提取 fields 数组（如 ["ipb_member_id","ipb_pass_hash","igneous","star"]）
+      const fieldsArrM = /fields\s*:\s*\[([^\]]*)\]/.exec(cookiesObj);
+      if (fieldsArrM !== null) {
+        const valRe = /["']([^"']*)["']/g;
+        let vm = valRe.exec(fieldsArrM[1]);
+        while (vm !== null) {
+          acc.cookieFields.push(vm[1]);
+          vm = valRe.exec(fieldsArrM[1]);
+        }
+      }
+    }
     meta.account = acc;
   }
 

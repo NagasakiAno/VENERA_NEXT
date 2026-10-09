@@ -20,8 +20,12 @@ import { restoreImported, restoreWebFavorites } from '../utils/FileImporter';
 import { jsSourceManager } from '../services/JsSourceManager';
 import { jsRuntime } from '../runtime/JsRuntime';
 import { diskCacheManager } from '../utils/DiskCacheManager';
+import { comicDetailCache } from '../services/ComicDetailCache';
 import { downloadQueueStore } from '../model/DownloadQueueStore';
+import { knockShareService } from '../services/KnockShareService';
 import { initBreakpoints, setFoldStatus, updateWindowSize } from '../utils/Breakpoints';
+import { appSettings } from '../model/AppSettings';
+import { downloadedChapterStore } from '../model/DownloadedChapterStore';
 
 const DOMAIN = 0x0000;
 const TAG = 'testTag';
@@ -58,6 +62,12 @@ export default class EntryAbility extends UIAbility {
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'Failed to set colorMode. Cause: %{public}s', JSON.stringify(err));
     }
+    // 初始化应用设置(Preferences 持久化), 必须在其他依赖 appSettings 的模块之前
+    appSettings.init(this.context).catch((e: Error) => {
+      hilog.error(DOMAIN, TAG, 'AppSettings 初始化失败: %{public}s', `${e}`);
+    });
+    // 初始化已下载章节URL列表存储(本地优先阅读)
+    downloadedChapterStore.init(this.context);
     // 恢复已导入的书(从 filesDir/imported.json, 纯文件存储不依赖 Preferences 时序)
     restoreImported(this.context);
     // 恢复 WEB 收藏(书架收藏页签, filesDir/web_favorites.json)
@@ -66,12 +76,16 @@ export default class EntryAbility extends UIAbility {
     diskCacheManager.init(this.context).catch((e: Error) => {
       hilog.error(DOMAIN, TAG, '磁盘缓存初始化失败: %{public}s', `${e}`);
     });
-    // 初始化下载队列(读取持久化的下载任务)
-    downloadQueueStore.init(this.context);
+    // 初始化详情页缓存(创建目录)
+    comicDetailCache.init(this.context).catch((e: Error) => {
+      hilog.error(DOMAIN, TAG, '详情缓存初始化失败: %{public}s', `${e}`);
+    });
     // 初始化下载队列(读取持久化的下载任务)
     downloadQueueStore.init(this.context);
     // 启动扫描已安装的 JS 漫画源
     jsSourceManager.scanFromFilesDir(this.context);
+    // 初始化碰一碰分享服务(注册接收监听)
+    knockShareService.init(this.context);
     // 初始化响应式断点
     initBreakpoints();
     // 初始化 JS 运行时(加载 init.js + sendMessage 桥), 异步执行不阻塞启动

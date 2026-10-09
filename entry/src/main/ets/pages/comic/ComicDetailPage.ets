@@ -21,6 +21,7 @@ import { readHistoryService, ReadHistoryItem } from '../../services/ReadHistoryS
 import { commentService, CommentResult } from '../../services/CommentService';
 import { persistWebFavorites } from '../../utils/FileImporter';
 import { appSettings } from '../../model/AppSettings';
+import { knockShareService, ShareType, WebShareData, LocalShareData } from '../../services/KnockShareService';
 import { ReaderSession } from './ReaderSession';
 import { PRIMARY, PRIMARY_50, SUCCESS, GRAY_100, GRAY_500, GRAY_900, CARD, BG, MUTED_FG, ERROR,
   RADIUS_SM, RADIUS_MD, RADIUS_LG, SPACE_2, SPACE_3, SPACE_4,
@@ -46,7 +47,7 @@ class TagItem {
   text: string = '';
 }
 
-/** 分组标签(namespace + 同组标签列表 + 颜色) */
+/** 标签分组(按 namespace) */
 class TagGroup {
   namespace: string = '';
   items: string[] = [];
@@ -585,6 +586,17 @@ export struct ComicDetailPage {
         this.showDownloadDialog();
       })
 
+      Column({ space: 2 }) {
+        SymbolGlyph($r('sys.symbol.share')).fontSize(22)
+          .fontColor([GRAY_500])
+        Text('碰一碰').fontSize(FS_SMALL).fontColor(MUTED_FG)
+      }
+      .width(72).height(48).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
+      .backgroundColor(GRAY_100)
+      .onClick(() => {
+        this.startKnockShare();
+      })
+
       if (this.progress !== null) {
         Column({ space: 2 }) {
           Text('继续阅读').fontSize(15).fontColor(CARD).fontWeight(FontWeight.Medium)
@@ -662,6 +674,50 @@ export struct ComicDetailPage {
     } else {
       promptAction.showToast({ message: '这些章节已在下载队列中' });
     }
+  }
+
+  /** 碰一碰分享: 将当前漫画信息通过 NFC 碰一碰分享给附近设备 */
+  private startKnockShare(): void {
+    if (!this.hasDetail) {
+      promptAction.showToast({ message: '漫画信息未加载完成' });
+      return;
+    }
+    const d = this.detail;
+    // 判断是 WEB 源还是本地源
+    if (this.sourceKey.length > 0) {
+      // WEB 源: 分享 sourceKey + comicId, 对方可直接关联到正确源
+      const shareData: WebShareData = {
+        type: ShareType.WEB,
+        sourceKey: this.sourceKey,
+        comicId: this.currentId,
+        title: d.title,
+        cover: d.cover,
+        author: d.uploader,
+        description: d.description,
+        tags: this.tags.map((t: TagItem) => t.text)
+      };
+      knockShareService.registerShare(shareData);
+      promptAction.showToast({ message: '碰一碰分享已准备，请将设备靠近对方设备' });
+    } else {
+      // 本地源: 分享元信息(文件包传输暂不支持)
+      const shareData: LocalShareData = {
+        type: ShareType.LOCAL,
+        title: d.title,
+        cover: d.cover,
+        author: d.uploader,
+        description: d.description,
+        tags: this.tags.map((t: TagItem) => t.text),
+        fileFormat: '',
+        fileSize: 0
+      };
+      knockShareService.registerShare(shareData);
+      promptAction.showToast({ message: '碰一碰分享已准备，本地文件传输暂不支持' });
+    }
+  }
+
+  /** 注销碰一碰分享监听(页面退出时调用) */
+  private stopKnockShare(): void {
+    knockShareService.unregisterShare();
   }
 
   /** WEB 收藏条目在书架中的 id */
@@ -1089,9 +1145,6 @@ export struct ComicDetailPage {
         }
         if (this.recommend.length > 0) {
           this.recommendSection()
-        }
-        if (this.hasDetail) {
-          this.commentSection()
         }
         if (this.hasDetail) {
           this.commentSection()

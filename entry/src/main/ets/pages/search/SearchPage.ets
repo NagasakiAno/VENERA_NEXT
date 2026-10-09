@@ -645,10 +645,11 @@ export struct SearchPage {
 
         Row() {
           SymbolGlyph($r('sys.symbol.magnifyingglass')).fontSize(16).fontColor([MUTED_FG])
+            .margin({ left: 8, right: 8 })
           TextInput({ text: this.keyword, placeholder: '搜索漫画或输入 ID' })
             .fontColor(GRAY_900).placeholderColor(MUTED_FG)
             .backgroundColor(Color.Transparent)
-            .padding({ left: 8, right: 8 })
+            .padding({ left: 4, right: 8 })
             .height(40)
             .layoutWeight(1)
             .onChange((v: string) => {

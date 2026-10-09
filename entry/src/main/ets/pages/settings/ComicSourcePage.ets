@@ -19,6 +19,7 @@ import { appSettings } from '../../model/AppSettings';
 import { PRIMARY, PRIMARY_50, GRAY_500, GRAY_900, GRAY_100, CARD, BG,
   MUTED_FG, ERROR, SUCCESS, RADIUS_MD, RADIUS_LG, SPACE_2, SPACE_3, SPACE_4,
   FS_TITLE, FS_SECTION, FS_CAPTION, FS_SMALL } from '../../utils/Design';
+import { SOURCE_API_DOC } from '../../utils/SourceApiDoc';
 
 const DOMAIN = 0x0000;
 const TAG = 'ComicSourcePage';
@@ -38,6 +39,8 @@ export struct ComicSourcePage {
   @State loading: boolean = false;
   @State loadingText: string = '加载中...';
   @State urlInput: string = '';
+  @State showApiDoc: boolean = false;
+  @State savingDoc: boolean = false;
 
   private ctx: common.UIAbilityContext | null = null;
 
@@ -56,6 +59,42 @@ export struct ComicSourcePage {
     this.ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
     this.listUrl = this.baseListUrl();
     this.refresh();
+  }
+
+  /** 系统返回事件: 先关闭弹层, 再返回上一页 */
+  onBackPress(): boolean {
+    if (this.showApiDoc) {
+      this.showApiDoc = false;
+      return true;
+    }
+    if (this.showRepo) {
+      this.showRepo = false;
+      return true;
+    }
+    router.back();
+    return true;
+  }
+
+  /** 保存接口文档到本地文件 */
+  private async saveApiDoc(): Promise<void> {
+    if (this.ctx === null) {
+      return;
+    }
+    this.savingDoc = true;
+    try {
+      const dir = this.ctx.filesDir;
+      const path = dir + '/source_api_doc.md';
+      const file = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
+      const encoder = util.TextEncoder.create('utf-8');
+      const encoded = encoder.encodeInto(SOURCE_API_DOC);
+      fs.writeSync(file.fd, encoded.buffer);
+      fs.closeSync(file);
+      promptAction.showToast({ message: '已保存到: ' + path });
+    } catch (e) {
+      promptAction.showToast({ message: '保存失败: ' + (e as Error).message });
+    } finally {
+      this.savingDoc = false;
+    }
   }
 
   private baseListUrl(): string {
@@ -82,9 +121,15 @@ export struct ComicSourcePage {
     return '';
   }
 
-  /** 按 URL 安装 */
+  /** 按 URL 安装 — 如果 URL 指向 index.json 仓库，自动打开源仓库弹层 */
   private async installByUrl(url: string): Promise<void> {
     if (url.length === 0 || this.ctx === null) {
+      return;
+    }
+    // 检测是否为仓库地址 (index.json 或 .json 结尾)
+    if (url.endsWith('.json') || url.includes('index.json')) {
+      this.listUrl = url;
+      this.openRepo();
       return;
     }
     this.startLoading('下载脚本中...');
@@ -206,7 +251,6 @@ export struct ComicSourcePage {
 
   /** 拉起仓库弹层(立即打开, 列表区显示加载中) */
   private async openRepo(): Promise<void> {
-    this.listUrl = this.baseListUrl();
     this.repoList = [];
     this.showRepo = true;
     this.startLoading('加载源仓库...');
@@ -392,7 +436,7 @@ export struct ComicSourcePage {
 
         // 安装操作栏
         Column() {
-          TextInput({ text: this.urlInput, placeholder: '输入 JS 脚本 URL 安装源' })
+          TextInput({ text: this.urlInput, placeholder: '输入 JS 脚本 URL 或源仓库地址' })
             .onChange((v: string) => { this.urlInput = v; })
             .fontColor(GRAY_900)
             .placeholderColor(MUTED_FG)
@@ -414,24 +458,47 @@ export struct ComicSourcePage {
             .height(34).padding({ left: 14, right: 14 }).borderRadius(17)
             .backgroundColor(GRAY_100).justifyContent(FlexAlign.Center).layoutWeight(1)
             .onClick(() => { this.installByFile(); })
-
-            Row() {
-              Text('源仓库').fontSize(FS_SMALL).fontColor(GRAY_900)
-            }
-            .height(34).padding({ left: 14, right: 14 }).borderRadius(17)
-            .backgroundColor(GRAY_100).justifyContent(FlexAlign.Center).layoutWeight(1)
-            .onClick(() => { this.openRepo(); })
           }
           .width('100%').margin({ top: 8 })
         }
         .width('92%').padding(SPACE_3)
         .backgroundColor(CARD).borderRadius(RADIUS_LG).margin({ top: 6 })
 
+        // 接口文档入口
+        Row() {
+          Text('源搭建接口文档').fontSize(FS_SMALL).fontColor(PRIMARY).layoutWeight(1)
+          if (this.savingDoc) {
+            LoadingProgress().width(16).height(16).color(PRIMARY)
+          } else {
+            Text('保存').fontSize(FS_SMALL).fontColor(PRIMARY)
+              .onClick(() => { this.saveApiDoc(); })
+          }
+          Text('查看').fontSize(FS_SMALL).fontColor(PRIMARY).margin({ left: 16 })
+            .onClick(() => { this.showApiDoc = true; })
+        }
+        .width('92%').height(40).padding({ left: SPACE_3, right: SPACE_3 })
+        .backgroundColor(CARD).borderRadius(RADIUS_MD).margin({ top: 8 })
+
+        // 接口文档入口
+        Row() {
+          Text('源搭建接口文档').fontSize(FS_SMALL).fontColor(PRIMARY).layoutWeight(1)
+          if (this.savingDoc) {
+            LoadingProgress().width(16).height(16).color(PRIMARY)
+          } else {
+            Text('保存').fontSize(FS_SMALL).fontColor(PRIMARY)
+              .onClick(() => { this.saveApiDoc(); })
+          }
+          Text('查看').fontSize(FS_SMALL).fontColor(PRIMARY).margin({ left: 16 })
+            .onClick(() => { this.showApiDoc = true; })
+        }
+        .width('92%').height(40).padding({ left: SPACE_3, right: SPACE_3 })
+        .backgroundColor(CARD).borderRadius(RADIUS_MD).margin({ top: 8 })
+
         // 源列表 / 空态
         if (this.sources.length === 0) {
           Column({ space: 8 }) {
             Text('尚未安装漫画源').fontSize(FS_SECTION).fontColor(GRAY_900)
-            Text('可从上方「源仓库」下拉官方源，或粘贴 JS 脚本 URL 安装').fontSize(FS_SMALL).fontColor(MUTED_FG)
+            Text('粘贴 JS 脚本 URL 安装，或输入源仓库地址（index.json）浏览安装').fontSize(FS_SMALL).fontColor(MUTED_FG)
           }
           .width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
         } else {
@@ -458,6 +525,82 @@ export struct ComicSourcePage {
         }
         .width('100%').height('100%')
         .backgroundColor('#331A1A1E')
+        .transition(TransitionEffect.OPACITY.animation({ duration: 200 }))
+      }
+
+      // 接口文档弹层
+      if (this.showApiDoc) {
+        Column() {
+          // 顶栏
+          Row() {
+            Row() {
+              SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(18).fontColor([GRAY_500])
+            }
+            .width(36).height(36).borderRadius(18).backgroundColor(CARD)
+            .justifyContent(FlexAlign.Center)
+            .onClick(() => { this.showApiDoc = false; })
+
+            Text('源搭建接口文档').fontSize(FS_TITLE).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
+              .layoutWeight(1).textAlign(TextAlign.Center)
+
+            Row() {
+              if (this.savingDoc) {
+                LoadingProgress().width(16).height(16).color(PRIMARY)
+              } else {
+                Text('保存').fontSize(FS_SMALL).fontColor(PRIMARY)
+              }
+            }
+            .width(48).height(36).justifyContent(FlexAlign.Center)
+            .onClick(() => { this.saveApiDoc(); })
+          }
+          .width('100%').height(52).padding({ left: SPACE_3, right: SPACE_3 })
+
+          Scroll() {
+            Text(SOURCE_API_DOC)
+              .fontSize(12).fontColor(GRAY_900).lineHeight(18)
+              .width('100%')
+          }
+          .width('100%').layoutWeight(1).scrollBar(BarState.Auto)
+        }
+        .width('100%').height('100%').backgroundColor(BG)
+        .transition(TransitionEffect.OPACITY.animation({ duration: 200 }))
+      }
+
+      // 接口文档弹层
+      if (this.showApiDoc) {
+        Column() {
+          // 顶栏
+          Row() {
+            Row() {
+              SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(18).fontColor([GRAY_500])
+            }
+            .width(36).height(36).borderRadius(18).backgroundColor(CARD)
+            .justifyContent(FlexAlign.Center)
+            .onClick(() => { this.showApiDoc = false; })
+
+            Text('源搭建接口文档').fontSize(FS_TITLE).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
+              .layoutWeight(1).textAlign(TextAlign.Center)
+
+            Row() {
+              if (this.savingDoc) {
+                LoadingProgress().width(16).height(16).color(PRIMARY)
+              } else {
+                Text('保存').fontSize(FS_SMALL).fontColor(PRIMARY)
+              }
+            }
+            .width(48).height(36).justifyContent(FlexAlign.Center)
+            .onClick(() => { this.saveApiDoc(); })
+          }
+          .width('100%').height(52).padding({ left: SPACE_3, right: SPACE_3 })
+
+          Scroll() {
+            Text(SOURCE_API_DOC)
+              .fontSize(12).fontColor(GRAY_900).lineHeight(18)
+              .width('100%')
+          }
+          .width('100%').layoutWeight(1).scrollBar(BarState.Auto)
+        }
+        .width('100%').height('100%').backgroundColor(BG)
         .transition(TransitionEffect.OPACITY.animation({ duration: 200 }))
       }
 

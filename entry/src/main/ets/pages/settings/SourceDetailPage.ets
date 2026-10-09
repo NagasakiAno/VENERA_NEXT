@@ -80,6 +80,12 @@ export struct SourceDetailPage {
     });
   }
 
+  /** 系统返回事件: 返回上一页(避免滑动返回直接退回桌面) */
+  onBackPress(): boolean {
+    router.back();
+    return true;
+  }
+
   private startLoading(text: string): void {
     this.loadingText = text;
     this.loading = true;

@@ -19,6 +19,7 @@ import { fileIo as fs } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { GRAY_900 } from '../../utils/Design';
+import { appSettings } from '../../model/AppSettings';
 
 // 沉浸光感材质(薄档: 最大限度保留背景透出的毛玻璃感)
 const READER_MATERIAL = new uiMaterial.ImmersiveMaterial({
@@ -218,8 +219,8 @@ export struct ReaderPage {
       this.mode = first.type === ReaderPageType.RICH ? 1 : this.mode;
       // 恢复上次阅读到的页码
       this.curPage = Math.max(0, Math.min(this.externalChapter.pages.length - 1, this.initialPage));
-      // 网络章节: 先加载首屏 3 页
-      this.ensureRange(this.curPage, 3);
+      // 网络章节: 先加载首屏预加载页数
+      this.ensureRange(this.curPage, appSettings.get<number>('preloadPageCount', 3));
       this.onProgress(this.curPage, this.externalChapter.pages.length);
       return;
     }
@@ -305,7 +306,7 @@ export struct ReaderPage {
     this.curPage = 0;
     this.swiperCtrl.changeIndex(0);
     this.scrollCtrl.scrollEdge(Edge.Top);
-    this.ensureRange(0, 3);
+    this.ensureRange(0, appSettings.get<number>('preloadPageCount', 3));
     // 章节变了, 进度从头开始
     this.onProgress(0, ext.pages.length);
   }
@@ -345,7 +346,7 @@ export struct ReaderPage {
       return;
     }
     this.curPage = t;
-    this.ensureRange(t - 1, 4);
+    this.ensureRange(t - 1, appSettings.get<number>('preloadPageCount', 3) + 1);
     this.onProgress(t, this.chapter.pages.length);
     this.haptic();
   }
@@ -553,7 +554,7 @@ export struct ReaderPage {
     .displayCount(this.isLandscape && !this.isRichChapter() ? 2 : 1)
     .onChange((i: number) => {
       this.curPage = i;
-      this.ensureRange(i - 1, 4);
+      this.ensureRange(i - 1, appSettings.get<number>('preloadPageCount', 3) + 1);
       this.onProgress(i, this.chapter.pages.length);
     })
     .width('100%').height('100%')

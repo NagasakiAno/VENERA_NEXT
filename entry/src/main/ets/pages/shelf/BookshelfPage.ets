@@ -8,6 +8,7 @@ import { localBookStore } from '../../model/LocalBookStore';
 import { localFavoritesStore, FavoriteItem, FavoriteFolder } from '../../model/LocalFavoritesStore';
 import { downloadQueueStore, DownloadTask, DownloadStatus } from '../../model/DownloadQueueStore';
 import { downloadService } from '../../services/DownloadService';
+import { diskCacheManager } from '../../utils/DiskCacheManager';
 import { doImport, restoreImported, removeImported, restoreWebFavorites, persistWebFavorites } from '../../utils/FileImporter';
 import { networkFavoritesService, NetworkFavoriteFolder } from '../../services/NetworkFavoritesService';
 import { readHistoryService, ReadHistoryItem } from '../../services/ReadHistoryService';
@@ -15,7 +16,8 @@ import { ComicSourceMeta } from '../../model/sources/ComicSourceMeta';
 import { comicSourceManager } from '../../model/ComicSource';
 import { promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
-import { fileIo as fs } from '@kit.CoreFileKit';
+import { picker, fileIo as fs } from '@kit.CoreFileKit';
+import { createZipFile, ZipEntryInput } from '../../utils/ZipWriter';
 import { PRIMARY, PRIMARY_50, GRAY_500, GRAY_900, GRAY_100, CARD, BG,
   MUTED_FG, ERROR, RADIUS_MD, RADIUS_LG, SPACE_3, FS_CAPTION, FS_SMALL } from '../../utils/Design';
 import { IS_WIDE, WIDTH_BP } from '../../utils/Breakpoints';
@@ -69,6 +71,7 @@ export struct BookshelfPage {
   // 导出模式
   @State exportMode: boolean = false;
   @State exportSelectedIds: string[] = [];
+  @State exportFormat: string = 'image'; // 'image' | 'cbz'
 
   aboutToAppear(): void {
     // 订阅 store 变化, 导入/恢复/删除后刷新本地列表
@@ -513,6 +516,47 @@ export struct BookshelfPage {
     return 3;
   }
 
+  /** 将数组按列数拆分为多行（用于手动分行布局替代 Grid） */
+  private chunkShelfItems(items: ShelfItem[], cols: number): ShelfItem[][] {
+    const rows: ShelfItem[][] = [];
+    for (let i = 0; i < items.length; i += cols) {
+      const row: ShelfItem[] = [];
+      const end = Math.min(i + cols, items.length);
+      for (let j = i; j < end; j++) { row.push(items[j]); }
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  private chunkDownloadTasks(items: DownloadTask[], cols: number): DownloadTask[][] {
+    const rows: DownloadTask[][] = [];
+    for (let i = 0; i < items.length; i += cols) {
+      const row: DownloadTask[] = [];
+      const end = Math.min(i + cols, items.length);
+      for (let j = i; j < end; j++) { row.push(items[j]); }
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  private chunkReadHistoryItems(items: ReadHistoryItem[], cols: number): ReadHistoryItem[][] {
+    const rows: ReadHistoryItem[][] = [];
+    for (let i = 0; i < items.length; i += cols) {
+      const row: ReadHistoryItem[] = [];
+      const end = Math.min(i + cols, items.length);
+      for (let j = i; j < end; j++) { row.push(items[j]); }
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  /** 生成空位索引数组（用于补齐最后一行，保持封面等宽） */
+  private emptySlots(filled: number, total: number): number[] {
+    const result: number[] = [];
+    for (let i = filled; i < total; i++) { result.push(i); }
+    return result;
+  }
+
   /** 当前 Tab 数据（仅 tab 0/1 使用，下载和收藏有独立 UI） */
   currentItems(): ShelfItem[] {
     const all = localBookStore.all();
@@ -556,50 +600,275 @@ export struct BookshelfPage {
     }
   }
 
-  /** 执行导出: 将选中任务的缓存图片复制到用户可访问目录 */
-  private doExport(): void {
-    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
-    const exportDir = ctx.filesDir + '/export';
-    try {
-      if (!fs.accessSync(exportDir)) {
-        fs.mkdirSync(exportDir, true);
-      }
-    } catch (e) {
-      promptAction.showToast({ message: '创建导出目录失败' });
-      return;
+  /** 执行导出: 根据格式选择图片导出或 CBZ 导出 */
+  private async doExport(): Promise<void> {
+    if (this.exportFormat === 'cbz') {
+      await this.doExportCBZ();
+    } else {
+      await this.doExportImages();
     }
+  }
 
-    let exportedCount = 0;
+  /** CBZ 格式导出: 将选中章节的图片压缩为 .cbz 文件 */
+  private async doExportCBZ(): Promise<void> {
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+
+    // 1. 收集所有要导出的文件路径
+    const allSrcPaths: string[] = [];
+    let comicName = '';
+
     for (let i = 0; i < this.exportSelectedIds.length; i++) {
       const taskId = this.exportSelectedIds[i];
       const task = downloadQueueStore.findTask(taskId);
       if (task === null || task.status !== DownloadStatus.COMPLETED) {
         continue;
       }
-      // 为每个任务创建子目录: comicTitle / chapterTitle
-      const safeComicName = task.comicTitle.replace(/[\/\\:*?"<>|]/g, '_');
-      const safeChapterName = task.title.replace(/[\/\\:*?"<>|]/g, '_');
-      const taskDir = exportDir + '/' + safeComicName + '/' + safeChapterName;
-      try {
-        if (!fs.accessSync(exportDir + '/' + safeComicName)) {
-          fs.mkdirSync(exportDir + '/' + safeComicName, true);
-        }
-        if (!fs.accessSync(taskDir)) {
-          fs.mkdirSync(taskDir, true);
-        }
-      } catch (e) {
-        continue;
+      if (comicName.length === 0) {
+        comicName = task.comicTitle.replace(/[\/\\:*?"<>|]/g, '_');
       }
-      exportedCount++;
+      const prefix = task.sourceKey + '|' + task.epId + '|';
+      const cachedPaths = diskCacheManager.findByPrefix(prefix);
+      for (let j = 0; j < cachedPaths.length; j++) {
+        allSrcPaths.push(cachedPaths[j]);
+      }
     }
 
-    this.exportMode = false;
-    this.exportSelectedIds = [];
-    promptAction.showToast({
-      message: exportedCount > 0 ?
-        `已导出 ${exportedCount} 个章节到 ${exportDir}` :
-        '导出失败'
-    });
+    if (allSrcPaths.length === 0) {
+      this.exportMode = false;
+      this.exportSelectedIds = [];
+      promptAction.showToast({ message: '没有可导出的缓存图片' });
+      return;
+    }
+
+    // 2. 读取缓存图片并构建 ZIP 条目
+    const cbzFileName = (comicName.length > 0 ? comicName : 'export') + '.cbz';
+    const cbzTempPath = ctx.tempDir + '/' + cbzFileName;
+
+    const zipEntries: ZipEntryInput[] = [];
+    for (let i = 0; i < allSrcPaths.length; i++) {
+      const seq = (i + 1).toString().padStart(4, '0');
+      const ext = this.getFileExtension(allSrcPaths[i]);
+      try {
+        const src = fs.openSync(allSrcPaths[i], fs.OpenMode.READ_ONLY);
+        const stat = fs.statSync(src.fd);
+        const buf = new ArrayBuffer(stat.size);
+        let read = 0;
+        while (read < stat.size) {
+          const n = fs.readSync(src.fd, buf, { offset: read, length: stat.size - read });
+          if (n <= 0) {
+            break;
+          }
+          read += n;
+        }
+        fs.closeSync(src);
+        const entry: ZipEntryInput = { name: seq + ext, data: new Uint8Array(buf) };
+        zipEntries.push(entry);
+      } catch (e) {
+        // 跳过读取失败的文件
+      }
+    }
+
+    if (zipEntries.length === 0) {
+      this.exportMode = false;
+      this.exportSelectedIds = [];
+      promptAction.showToast({ message: '没有可导出的缓存图片' });
+      return;
+    }
+
+    // 3. 用 ZipWriter 创建 .cbz (ZIP) 文件
+    try {
+      await createZipFile(zipEntries, cbzTempPath);
+    } catch (e) {
+      this.exportMode = false;
+      this.exportSelectedIds = [];
+      promptAction.showToast({ message: 'CBZ 压缩失败: ' + (e as Error).message });
+      return;
+    }
+
+    // 4. 通过 DocumentViewPicker 让用户选择保存位置
+    try {
+      const pickerInst = new picker.DocumentViewPicker(ctx);
+      const opts = new picker.DocumentSaveOptions();
+      opts.newFileNames = [cbzFileName];
+
+      const uris: string[] = await pickerInst.save(opts);
+      if (uris.length === 0) {
+        // 用户取消
+        try { fs.unlinkSync(cbzTempPath); } catch (e) {}
+        this.exportMode = false;
+        this.exportSelectedIds = [];
+        return;
+      }
+
+      // 5. 将 cbz 文件复制到用户选择的位置
+      let exported = false;
+      try {
+        const src = fs.openSync(cbzTempPath, fs.OpenMode.READ_ONLY);
+        const dst = fs.openSync(uris[0], fs.OpenMode.WRITE_ONLY | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+        fs.copyFileSync(src.fd, dst.fd, 0);
+        fs.closeSync(src);
+        fs.closeSync(dst);
+        exported = true;
+      } catch (e) {
+        // 复制失败
+      }
+
+      // 6. 清理暂存文件
+      try { fs.unlinkSync(cbzTempPath); } catch (e) {}
+
+      this.exportMode = false;
+      this.exportSelectedIds = [];
+      promptAction.showToast({
+        message: exported ? `已导出 ${cbzFileName}` : '导出失败'
+      });
+    } catch (e) {
+      try { fs.unlinkSync(cbzTempPath); } catch (e) {}
+      this.exportMode = false;
+      this.exportSelectedIds = [];
+      promptAction.showToast({ message: '导出失败: ' + (e as Error).message });
+    }
+  }
+
+  /** 获取文件扩展名（含点号） */
+  private getFileExtension(path: string): string {
+    const lastDot = path.lastIndexOf('.');
+    if (lastDot >= 0) {
+      return path.substring(lastDot).toLowerCase();
+    }
+    return '.jpg';
+  }
+
+  /** 图片格式导出: 将选中任务的缓存图片通过 DocumentViewPicker 保存到用户选择的目录 */
+  private async doExportImages(): Promise<void> {
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+
+    // 1. 收集所有要导出的文件路径和目标文件名
+    const allSrcPaths: string[] = [];
+    const allFileNames: string[] = [];
+
+    for (let i = 0; i < this.exportSelectedIds.length; i++) {
+      const taskId = this.exportSelectedIds[i];
+      const task = downloadQueueStore.findTask(taskId);
+      if (task === null || task.status !== DownloadStatus.COMPLETED) {
+        continue;
+      }
+      const safeComicName = task.comicTitle.replace(/[\/\\:*?"<>|]/g, '_');
+      const safeChapterName = task.title.replace(/[\/\\:*?"<>|]/g, '_');
+      // 缓存键前缀: sourceKey|epId|
+      const prefix = task.sourceKey + '|' + task.epId + '|';
+      const cachedPaths = diskCacheManager.findByPrefix(prefix);
+      for (let j = 0; j < cachedPaths.length; j++) {
+        allSrcPaths.push(cachedPaths[j]);
+        // 文件名: 漫画名_章节名_序号.jpg
+        const seq = (j + 1).toString().padStart(3, '0');
+        allFileNames.push(`${safeComicName}_${safeChapterName}_${seq}.jpg`);
+      }
+    }
+
+    if (allSrcPaths.length === 0) {
+      this.exportMode = false;
+      this.exportSelectedIds = [];
+      promptAction.showToast({ message: '没有可导出的缓存图片' });
+      return;
+    }
+
+    // 2. 先将缓存文件复制到 tempDir 暂存区(确保有读取权限)
+    const tempExportDir = ctx.tempDir + '/export';
+    try {
+      if (!fs.accessSync(tempExportDir)) {
+        fs.mkdirSync(tempExportDir, true);
+      }
+    } catch (e) {
+      promptAction.showToast({ message: '创建暂存目录失败' });
+      return;
+    }
+
+    const tempFilePaths: string[] = [];
+    for (let i = 0; i < allSrcPaths.length; i++) {
+      const tempPath = tempExportDir + '/' + allFileNames[i];
+      try {
+        fs.copyFileSync(allSrcPaths[i], tempPath, 0);
+        tempFilePaths.push(tempPath);
+      } catch (e) {
+        // 跳过复制失败的文件
+      }
+    }
+
+    if (tempFilePaths.length === 0) {
+      promptAction.showToast({ message: '暂存文件失败，无法导出' });
+      return;
+    }
+
+    // 3. 使用 DocumentViewPicker 让用户选择保存位置
+    try {
+      const pickerInst = new picker.DocumentViewPicker(ctx);
+      const opts = new picker.DocumentSaveOptions();
+      // 限制文件数量，避免 picker UI 过载（最多 100 个文件）
+      const saveNames = tempFilePaths.length <= 100 ?
+        allFileNames.slice(0, tempFilePaths.length) :
+        allFileNames.slice(0, 100);
+      opts.newFileNames = saveNames;
+
+      const uris: string[] = await pickerInst.save(opts);
+      if (uris.length === 0) {
+        // 用户取消
+        this.cleanupTempExport(tempExportDir);
+        this.exportMode = false;
+        this.exportSelectedIds = [];
+        return;
+      }
+
+      // 4. 将暂存文件复制到用户选择的位置
+      let exportedCount = 0;
+      for (let i = 0; i < uris.length && i < tempFilePaths.length; i++) {
+        try {
+          const src = fs.openSync(tempFilePaths[i], fs.OpenMode.READ_ONLY);
+          const dst = fs.openSync(uris[i], fs.OpenMode.WRITE_ONLY | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+          fs.copyFileSync(src.fd, dst.fd, 0);
+          fs.closeSync(src);
+          fs.closeSync(dst);
+          exportedCount++;
+        } catch (e) {
+          // 跳过失败的文件
+        }
+      }
+
+      // 5. 清理暂存目录
+      this.cleanupTempExport(tempExportDir);
+
+      this.exportMode = false;
+      this.exportSelectedIds = [];
+      promptAction.showToast({
+        message: exportedCount > 0 ?
+          `已导出 ${exportedCount} 张图片` :
+          '导出失败'
+      });
+    } catch (e) {
+      this.cleanupTempExport(tempExportDir);
+      this.exportMode = false;
+      this.exportSelectedIds = [];
+      promptAction.showToast({ message: '导出失败: ' + (e as Error).message });
+    }
+  }
+
+  /** 清理暂存导出目录 */
+  private cleanupTempExport(dir: string): void {
+    try {
+      if (!fs.accessSync(dir)) {
+        return;
+      }
+      const names: string[] = fs.listFileSync(dir);
+      for (let i = 0; i < names.length; i++) {
+        try {
+          fs.unlinkSync(dir + '/' + names[i]);
+        } catch (e) {
+          // 忽略
+        }
+      }
+      fs.rmdirSync(dir);
+    } catch (e) {
+      // 忽略
+    }
   }
 
   /** 已下载章节封面卡片 */
@@ -721,7 +990,7 @@ export struct BookshelfPage {
       .scrollBar(BarState.Off)
       .layoutWeight(1)
     }
-    .width('92%')
+    .layoutWeight(1)
     .margin({ top: 4, bottom: 4 })
   }
 
@@ -967,6 +1236,18 @@ export struct BookshelfPage {
         // 导出模式顶栏
         Text(`已选 ${this.exportSelectedIds.length} 项`).fontSize(FS_SMALL)
           .fontColor(GRAY_900).fontWeight(FontWeight.Medium)
+        // 格式切换
+        Row({ space: 4 }) {
+          Text('图片').fontSize(11).fontColor(this.exportFormat === 'image' ? CARD : GRAY_500)
+            .backgroundColor(this.exportFormat === 'image' ? PRIMARY : GRAY_100)
+            .borderRadius(10).padding({ left: 8, right: 8, top: 3, bottom: 3 })
+            .onClick(() => { this.exportFormat = 'image'; })
+          Text('CBZ').fontSize(11).fontColor(this.exportFormat === 'cbz' ? CARD : GRAY_500)
+            .backgroundColor(this.exportFormat === 'cbz' ? PRIMARY : GRAY_100)
+            .borderRadius(10).padding({ left: 8, right: 8, top: 3, bottom: 3 })
+            .onClick(() => { this.exportFormat = 'cbz'; })
+        }
+        .margin({ left: 8 })
         Blank()
         // 全选
         Text('全选').fontSize(FS_SMALL).fontColor(PRIMARY)
@@ -1120,27 +1401,31 @@ export struct BookshelfPage {
       // 收藏 tab: 文件夹选择栏 + 操作按钮
       if (this.tab === 3) {
         // 第一行: 文件夹栏 + 管理/选择按钮
-        Row({ space: 8 }) {
+        Row({ space: 6 }) {
           this.favFolderBar()
-          // 管理按钮（单删模式）
+          // 管理按钮（单删模式）— 窄屏只显示图标
           if (!this.favSelectMode) {
             Row() {
               SymbolGlyph($r('sys.symbol.square_grid_2x2')).fontSize(14)
                 .fontColor([this.manageMode ? PRIMARY : GRAY_500])
-              Text(this.manageMode ? '完成' : '管理').fontSize(FS_SMALL)
-                .fontColor(this.manageMode ? PRIMARY : GRAY_500).margin({ left: 4 })
+              if (this.isWide) {
+                Text(this.manageMode ? '完成' : '管理').fontSize(FS_SMALL)
+                  .fontColor(this.manageMode ? PRIMARY : GRAY_500).margin({ left: 4 })
+              }
             }
             .height(32).padding({ left: 10, right: 10 }).borderRadius(16)
             .backgroundColor(this.manageMode ? PRIMARY_50 : GRAY_100)
             .justifyContent(FlexAlign.Center)
             .onClick(() => { this.toggleManage(); })
           }
-          // 批量选择按钮
+          // 批量选择按钮 — 窄屏只显示图标
           Row() {
             SymbolGlyph($r('sys.symbol.checkmark_circle')).fontSize(14)
               .fontColor([this.favSelectMode ? PRIMARY : GRAY_500])
-            Text(this.favSelectMode ? '完成' : '选择').fontSize(FS_SMALL)
-              .fontColor(this.favSelectMode ? PRIMARY : GRAY_500).margin({ left: 4 })
+            if (this.isWide) {
+              Text(this.favSelectMode ? '完成' : '选择').fontSize(FS_SMALL)
+                .fontColor(this.favSelectMode ? PRIMARY : GRAY_500).margin({ left: 4 })
+            }
           }
           .height(32).padding({ left: 10, right: 10 }).borderRadius(16)
           .backgroundColor(this.favSelectMode ? PRIMARY_50 : GRAY_100)
@@ -1266,7 +1551,7 @@ export struct BookshelfPage {
           List({ space: 8 }) {
             ForEach(this.downloadTasks, (task: DownloadTask) => {
               ListItem() { this.downloadTaskRow(task) }
-            }, (task: DownloadTask) => task.id)
+            }, (task: DownloadTask) => task.id + '_' + task.progress + '_' + task.status + '_' + task.downloadedImages)
           }
           .width('100%').padding({ left: SPACE_3, right: SPACE_3 }).layoutWeight(1)
         }
@@ -1294,26 +1579,36 @@ export struct BookshelfPage {
               // 本地阅读历史
               if (allWithRead(localBookStore.all()).length > 0) {
                 Text('本地').fontSize(FS_SMALL).fontColor(MUTED_FG).width('100%')
-                Grid() {
-                  ForEach(allWithRead(localBookStore.all()), (item: ShelfItem) => {
-                    GridItem() { this.coverCell(item) }
-                  }, (item: ShelfItem) => item.id)
-                }
-                .columnsTemplate(this.columns())
-                .columnsGap(12).rowsGap(12)
-                .width('100%')
+                Column({ space: 12 }) {
+                  ForEach(this.chunkShelfItems(allWithRead(localBookStore.all()), this.colCount()),
+                    (row: ShelfItem[]) => {
+                      Row({ space: 12 }) {
+                        ForEach(row, (item: ShelfItem) => {
+                          Column() { this.coverCell(item) }.layoutWeight(1)
+                        }, (item: ShelfItem) => item.id)
+                        ForEach(this.emptySlots(row.length, this.colCount()), (idx: number) => {
+                          Column().layoutWeight(1)
+                        }, (idx: number) => `hempty#${idx}`)
+                      }.width('100%')
+                    }, (row: ShelfItem[]) => `hrow#${row[0].id}`)
+                }.width('100%')
               }
               // WEB 阅读历史
               if (this.webHistoryItems.length > 0) {
                 Text('网络').fontSize(FS_SMALL).fontColor(MUTED_FG).width('100%')
-                Grid() {
-                  ForEach(this.webHistoryItems, (item: ReadHistoryItem) => {
-                    GridItem() { this.webHistoryCoverCell(item) }
-                  }, (item: ReadHistoryItem) => `wh#${item.sourceKey}#${item.comicId}`)
-                }
-                .columnsTemplate(this.columns())
-                .columnsGap(12).rowsGap(12)
-                .width('100%')
+                Column({ space: 12 }) {
+                  ForEach(this.chunkReadHistoryItems(this.webHistoryItems, this.colCount()),
+                    (row: ReadHistoryItem[]) => {
+                      Row({ space: 12 }) {
+                        ForEach(row, (item: ReadHistoryItem) => {
+                          Column() { this.webHistoryCoverCell(item) }.layoutWeight(1)
+                        }, (item: ReadHistoryItem) => `wh#${item.sourceKey}#${item.comicId}`)
+                        ForEach(this.emptySlots(row.length, this.colCount()), (idx: number) => {
+                          Column().layoutWeight(1)
+                        }, (idx: number) => `whempty#${idx}`)
+                      }.width('100%')
+                    }, (row: ReadHistoryItem[]) => `whrow#${row[0].sourceKey}#${row[0].comicId}`)
+                }.width('100%')
               }
             }
             .width('100%').padding({ left: SPACE_3, right: SPACE_3, bottom: 16 })
@@ -1331,26 +1626,36 @@ export struct BookshelfPage {
               // 本地导入书籍
               if (this.localOnlyItems().length > 0) {
                 Text('本地导入').fontSize(FS_SMALL).fontColor(MUTED_FG).width('100%')
-                Grid() {
-                  ForEach(this.localOnlyItems(), (item: ShelfItem) => {
-                    GridItem() { this.coverCell(item) }
-                  }, (item: ShelfItem) => item.id)
-                }
-                .columnsTemplate(this.columns())
-                .columnsGap(12).rowsGap(12)
-                .width('100%')
+                Column({ space: 12 }) {
+                  ForEach(this.chunkShelfItems(this.localOnlyItems(), this.colCount()),
+                    (row: ShelfItem[]) => {
+                      Row({ space: 12 }) {
+                        ForEach(row, (item: ShelfItem) => {
+                          Column() { this.coverCell(item) }.layoutWeight(1)
+                        }, (item: ShelfItem) => item.id)
+                        ForEach(this.emptySlots(row.length, this.colCount()), (idx: number) => {
+                          Column().layoutWeight(1)
+                        }, (idx: number) => `lempty#${idx}`)
+                      }.width('100%')
+                    }, (row: ShelfItem[]) => `lrow#${row[0].id}`)
+                }.width('100%')
               }
               // 已下载章节
               if (this.completedDownloads().length > 0) {
                 Text('已下载').fontSize(FS_SMALL).fontColor(MUTED_FG).width('100%')
-                Grid() {
-                  ForEach(this.completedDownloads(), (task: DownloadTask) => {
-                    GridItem() { this.downloadedCoverCell(task) }
-                  }, (task: DownloadTask) => `dl#${task.id}`)
-                }
-                .columnsTemplate(this.columns())
-                .columnsGap(12).rowsGap(12)
-                .width('100%')
+                Column({ space: 12 }) {
+                  ForEach(this.chunkDownloadTasks(this.completedDownloads(), this.colCount()),
+                    (row: DownloadTask[]) => {
+                      Row({ space: 12 }) {
+                        ForEach(row, (task: DownloadTask) => {
+                          Column() { this.downloadedCoverCell(task) }.layoutWeight(1)
+                        }, (task: DownloadTask) => `dl#${task.id}`)
+                        ForEach(this.emptySlots(row.length, this.colCount()), (idx: number) => {
+                          Column().layoutWeight(1)
+                        }, (idx: number) => `dlempty#${idx}`)
+                      }.width('100%')
+                    }, (row: DownloadTask[]) => `dlrow#${row[0].id}`)
+                }.width('100%')
               }
             }
             .width('100%').padding({ left: SPACE_3, right: SPACE_3, bottom: 16 })

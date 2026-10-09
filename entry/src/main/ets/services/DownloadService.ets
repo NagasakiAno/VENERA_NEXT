@@ -9,6 +9,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { comicReadService } from './ComicReadService';
 import { downloadQueueStore, DownloadTask, DownloadStatus } from '../model/DownloadQueueStore';
 import { diskCacheManager } from '../utils/DiskCacheManager';
+import { downloadedChapterStore } from '../model/DownloadedChapterStore';
 
 const DOMAIN = 0x0000;
 const TAG = 'DownloadService';
@@ -70,7 +71,7 @@ class DownloadService {
       }
 
       const url = chapterImages.urls[i];
-      const cacheKey = task.sourceKey + '|' + task.epId + '|' + url;
+      const cacheKey = task.sourceKey + '|' + task.comicId + '|' + task.epId + '|' + url;
 
       // 检查磁盘缓存是否已有此图片（避免重复下载）
       const existingPath = diskCacheManager.find(cacheKey);
@@ -103,10 +104,14 @@ class DownloadService {
     } else if (failedCount > 0) {
       downloadQueueStore.updateError(task.id, `${failedCount} 张图片下载失败`);
       downloadQueueStore.updateStatus(task.id, DownloadStatus.COMPLETED);
+      // 保存URL列表到本地，下次阅读时优先从本地加载
+      downloadedChapterStore.save(task.sourceKey, task.comicId, task.epId, chapterImages.urls);
       hilog.info(DOMAIN, TAG, '下载完成（部分失败）: %{public}s (%{public}d/%{public}d)',
         task.title, downloaded, total);
     } else {
       downloadQueueStore.updateStatus(task.id, DownloadStatus.COMPLETED);
+      // 保存URL列表到本地，下次阅读时优先从本地加载
+      downloadedChapterStore.save(task.sourceKey, task.comicId, task.epId, chapterImages.urls);
       hilog.info(DOMAIN, TAG, '下载完成: %{public}s (%{public}d 张)', task.title, total);
     }
 

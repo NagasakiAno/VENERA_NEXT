@@ -72,6 +72,39 @@ struct Index {
     this.webDetailVisible = false;
   }
 
+  /** 关闭全局阅读器(替换空会话 + 隐藏 + 通知回调释放资源) */
+  closeReader(): void {
+    const s = this.readerSession;
+    this.readerSession = new ReaderSession();
+    ReaderSession.hide();
+    s.onClose();
+  }
+
+  /**
+   * 系统返回事件(滑动返回/返回键)统一拦截:
+   * 优先关闭窗口根层覆盖层(阅读器 > 在线详情 > 详情面板 > 搜索),
+   * 全部关闭后才走系统默认行为(桌面), 保证滑动返回能逐级返回。
+   */
+  onBackPress(): boolean {
+    if (this.readerVisible) {
+      this.closeReader();
+      return true;
+    }
+    if (this.webDetailVisible) {
+      this.closeWebComic();
+      return true;
+    }
+    if (this.showDetail) {
+      this.closeDetail();
+      return true;
+    }
+    if (this.showSearch) {
+      this.showSearch = false;
+      return true;
+    }
+    return false;
+  }
+
   async onStartRead(item: ShelfItem, chapter: number): Promise<void> {
     // WEB 收藏条目: 章节阅读需联网加载, 请从发现/搜索的 ComicDetailSheet 进入
     if (item.sourceType === ShelfSourceType.WEB) {
@@ -288,11 +321,12 @@ struct Index {
     Row() {
       // 圆角矩形底框侧边导航(半透明模糊材质)
       Column() {
-        // Logo
-        Row() {
-          Text('V').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#FFFFFFFF')
-        }.width(44).height(44).borderRadius(22).backgroundColor(PRIMARY)
-          .justifyContent(FlexAlign.Center).margin({ top: 20, bottom: 16 })
+        // Logo(应用 LOGO 图, 裁成圆形, 与原 V 字圆底一致)
+        Image($r('app.media.app_logo'))
+          .width(44).height(44)
+          .borderRadius(22)
+          .objectFit(ImageFit.Cover)
+          .margin({ top: 20, bottom: 16 })
 
         // 按钮区 + 滑动高亮胶囊
         Stack({ alignContent: Alignment.TopStart }) {
@@ -374,12 +408,7 @@ struct Index {
           onSwitchChapter: this.readerSession.switcher,
           onProgress: this.readerSession.onProgress,
           initialPage: this.readerSession.startPage,
-          onBack: (): void => {
-            const s = this.readerSession;
-            this.readerSession = new ReaderSession();
-            ReaderSession.hide();
-            s.onClose();
-          }
+          onBack: (): void => this.closeReader()
         })
         .width('100%').height('100%')
       }

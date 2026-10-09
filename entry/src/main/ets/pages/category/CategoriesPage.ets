@@ -21,6 +21,10 @@ interface CategoryRouteParams {
   category: string;
   param: string;
   title: string;
+  /** 搜索模式: 从分类页的 search 类型项进入时为 true */
+  searchMode?: boolean;
+  /** 搜索模式下的关键词 */
+  keyword?: string;
 }
 
 /** 展示用分组(已按 random 抽取) */
@@ -46,6 +50,12 @@ export struct CategoriesPage {
     this.bootstrap().catch((e: Error) => {
       hilog.error(DOMAIN, TAG, '初始化失败: %{public}s', `${e}`);
     });
+  }
+
+  /** 系统返回事件: 返回上一页(避免滑动返回直接退回桌面) */
+  onBackPress(): boolean {
+    router.back();
+    return true;
   }
 
   private async bootstrap(): Promise<void> {
@@ -107,7 +117,21 @@ export struct CategoriesPage {
       return;
     }
     if (target.isSearch()) {
-      promptAction.showToast({ message: '搜索页开发中：' + target.keyword });
+      const params: CategoryRouteParams = {
+        sourceKey: sourceKey,
+        category: '',
+        param: '',
+        title: item.label,
+        searchMode: true,
+        keyword: target.keyword.length > 0 ? target.keyword : item.label
+      };
+      router.pushUrl({ url: 'pages/category/CategoryComicsPage', params: params })
+        .then(() => {
+          hilog.info(DOMAIN, TAG, '已打开搜索结果页 %{public}s', params.keyword);
+        })
+        .catch((e: Error) => {
+          hilog.error(DOMAIN, TAG, '打开搜索结果失败: %{public}s', JSON.stringify(e));
+        });
       return;
     }
     promptAction.showToast({ message: '暂不支持的跳转：' + target.page });

@@ -2,8 +2,8 @@
   "app": {
     "bundleName": "com.venera.next",
     "vendor": "example",
-    "versionCode": 1000000,
-    "versionName": "1.0.0",
+    "versionCode": 1000005,
+    "versionName": "1.0.5",
     "icon": "$media:layered_image",
     "label": "$string:app_name"
   }

@@ -16,6 +16,7 @@ import { jsRuntime } from '../runtime/JsRuntime';
 import { imageBridge, ImageBuffer } from '../runtime/ImageBridge';
 import { diskCacheManager } from '../utils/DiskCacheManager';
 import { fileIo as fs } from '@kit.CoreFileKit';
+import { downloadedChapterStore } from '../model/DownloadedChapterStore';
 
 const DOMAIN = 0x0000;
 const TAG = 'ComicReadService';
@@ -58,9 +59,22 @@ export class ComicReadService {
     return ComicReadService.instance;
   }
 
-  /** 拉取章节图片地址(comic.loadEp) */
+  /** 拉取章节图片地址(comic.loadEp) — 优先读取本地已下载的URL列表 */
   async loadImages(sourceKey: string, comicId: string, epId: string): Promise<ChapterImages> {
     const out = new ChapterImages();
+    hilog.info(DOMAIN, TAG, 'loadImages: sourceKey=%{public}s comicId=%{public}s epId=%{public}s',
+      sourceKey, comicId, epId);
+
+    // 1. 优先检查本地是否已下载该章节（有URL列表文件）
+    const localUrls = downloadedChapterStore.load(sourceKey, comicId, epId);
+    if (localUrls !== null && localUrls.length > 0) {
+      out.urls = localUrls;
+      hilog.info(DOMAIN, TAG, '本地命中章节 %{public}s@%{public}s: %{public}d 张图',
+        sourceKey, epId, out.urls.length);
+      return out;
+    }
+
+    // 2. 本地没有，走网络获取
     let json = '';
     try {
       json = await jsRuntime.callLoadEp(sourceKey, comicId, epId);
@@ -100,6 +114,9 @@ export class ComicReadService {
     }
     if (out.urls.length === 0) {
       out.error = '该章节没有图片';
+    } else {
+      // 网络获取成功 → 保存URL列表到本地，下次阅读优先从本地加载
+      downloadedChapterStore.save(sourceKey, comicId, epId, out.urls);
     }
     hilog.info(DOMAIN, TAG, '章节 %{public}s@%{public}s: %{public}d 张图',
       sourceKey, epId, out.urls.length);
@@ -112,7 +129,7 @@ export class ComicReadService {
    */
   async loadImage(sourceKey: string, comicId: string, epId: string,
                   url: string): Promise<image.PixelMap | null> {
-    const cacheKey = sourceKey + '|' + epId + '|' + url;
+    const cacheKey = sourceKey + '|' + comicId + '|' + epId + '|' + url;
     // 1. 内存缓存命中 → 直接返回
     const hit = this.cache.get(cacheKey);
     if (hit !== undefined) {
@@ -217,6 +234,18 @@ export class ComicReadService {
   private async loadConfig(sourceKey: string, comicId: string, epId: string,
                            url: string): Promise<ImageLoadingConfig> {
     const cfg: ImageLoadingConfig = { url: '', headers: {}, modifyImage: '' };
+
+    // 1. 优先从本地持久化配置读取（离线阅读时不再走网络）
+    const localCfg = downloadedChapterStore.loadImageConfig(sourceKey, comicId, epId, url);
+    if (localCfg !== null) {
+      cfg.url = localCfg.url;
+      cfg.headers = localCfg.headers;
+      cfg.modifyImage = localCfg.modifyImage;
+      hilog.info(DOMAIN, TAG, '使用本地配置 %{public}s', truncate(url));
+      return cfg;
+    }
+
+    // 2. 本地没有 → 走网络获取
     let json = '';
     try {
       json = await jsRuntime.callOnImageLoad(sourceKey, url, comicId, epId);
@@ -252,6 +281,11 @@ export class ComicReadService {
     if (typeof m === 'string' && (m as string).length > 0) {
       cfg.modifyImage = m as string;
     }
+
+    // 3. 网络获取成功 → 保存到本地，下次离线阅读可直接使用
+    downloadedChapterStore.saveImageConfig(sourceKey, comicId, epId, url,
+      cfg.url, cfg.headers, cfg.modifyImage);
+
     return cfg;
   }
 

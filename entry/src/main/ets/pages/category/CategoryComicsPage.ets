@@ -7,6 +7,7 @@ import { promptAction, router } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { comicSourceManager } from '../../model/ComicSource';
 import { categoryService, CategoryBatch } from '../../services/CategoryService';
+import { searchService, SourceSearchResult } from '../../services/SearchService';
 import { ExploreComic } from '../../services/ExploreService';
 import { ComicDetailSheet } from '../comic/ComicDetailSheet';
 import { PRIMARY, GRAY_100, GRAY_900, CARD, BG, MUTED_FG, ERROR, RADIUS_MD,
@@ -21,6 +22,10 @@ interface CategoryRouteParams {
   category: string;
   param: string;
   title: string;
+  /** 搜索模式: 从分类页的 search 类型项进入时为 true */
+  searchMode?: boolean;
+  /** 搜索模式下的关键词 */
+  keyword?: string;
 }
 
 /** 一个选项组的展示模型 */
@@ -38,6 +43,8 @@ export struct CategoryComicsPage {
   @State category: string = '';
   @State param: string = '';
   @State title: string = '';
+  @State searchMode: boolean = false;
+  @State keyword: string = '';
   @State groups: OptionGroupView[] = [];
   @State comics: ExploreComic[] = [];
   @State pageNo: number = 1;
@@ -60,11 +67,23 @@ export struct CategoryComicsPage {
       this.category = params.category;
       this.param = params.param;
       this.title = params.title;
+      this.searchMode = params.searchMode === true;
+      this.keyword = params.keyword !== undefined ? params.keyword : '';
     }
     this.initGroups();
     this.reload().catch((e: Error) => {
-      hilog.error(DOMAIN, TAG, '加载分类结果失败: %{public}s', `${e}`);
+      hilog.error(DOMAIN, TAG, '加载结果失败: %{public}s', `${e}`);
     });
+  }
+
+  /** 系统返回事件: 先关闭详情弹层, 再返回上一页(避免滑动返回直接退回桌面) */
+  onBackPress(): boolean {
+    if (this.detailVisible) {
+      this.detailVisible = false;
+      return true;
+    }
+    router.back();
+    return true;
   }
 
   private initGroups(): void {
@@ -73,8 +92,10 @@ export struct CategoryComicsPage {
       return;
     }
     const out: OptionGroupView[] = [];
-    for (let i = 0; i < meta.categoryOptions.length; i++) {
-      const def = meta.categoryOptions[i];
+    // 搜索模式用 searchOptions, 分类模式用 categoryOptions
+    const defs = this.searchMode ? meta.searchOptions : meta.categoryOptions;
+    for (let i = 0; i < defs.length; i++) {
+      const def = defs[i];
       const group = new OptionGroupView();
       group.label = def.label;
       def.options.forEach((label: string, key: string) => {
@@ -109,9 +130,21 @@ export struct CategoryComicsPage {
     this.pageNo = 1;
     this.maxPage = 1;
     try {
-      const batch = await categoryService.load(this.sourceKey, this.category, this.param,
-        this.currentOptions(), 1);
-      this.applyBatch(batch, false);
+      if (this.searchMode) {
+        const result = await searchService.search(this.sourceKey, this.keyword,
+          this.currentOptions(), 1);
+        if (result.isOk()) {
+          this.comics = result.comics;
+          this.maxPage = result.maxPage > 0 ? result.maxPage : 1;
+          this.pageNo = 1;
+        } else {
+          this.errorMsg = result.error;
+        }
+      } else {
+        const batch = await categoryService.load(this.sourceKey, this.category, this.param,
+          this.currentOptions(), 1);
+        this.applyBatch(batch, false);
+      }
     } catch (e) {
       this.errorMsg = `${e}`;
       hilog.error(DOMAIN, TAG, '加载失败: %{public}s', `${e}`);
@@ -126,9 +159,19 @@ export struct CategoryComicsPage {
     }
     this.loadingMore = true;
     try {
-      const batch = await categoryService.load(this.sourceKey, this.category, this.param,
-        this.currentOptions(), this.pageNo + 1);
-      this.applyBatch(batch, true);
+      if (this.searchMode) {
+        const result = await searchService.search(this.sourceKey, this.keyword,
+          this.currentOptions(), this.pageNo + 1);
+        if (result.isOk()) {
+          this.comics = this.comics.concat(result.comics);
+          this.maxPage = result.maxPage > 0 ? result.maxPage : 1;
+          this.pageNo = this.pageNo + 1;
+        }
+      } else {
+        const batch = await categoryService.load(this.sourceKey, this.category, this.param,
+          this.currentOptions(), this.pageNo + 1);
+        this.applyBatch(batch, true);
+      }
     } catch (e) {
       hilog.warn(DOMAIN, TAG, '加载下一页失败: %{public}s', `${e}`);
     } finally {

@@ -3,6 +3,8 @@
     "pages/Index",
     "pages/settings/ComicSourcePage",
     "pages/settings/SourceDetailPage",
+    "pages/settings/DisclaimerPage",
+    "pages/settings/AboutPage",
     "pages/category/CategoriesPage",
     "pages/category/CategoryComicsPage"
   ]

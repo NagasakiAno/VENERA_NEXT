@@ -199,6 +199,22 @@ export class DiskCacheManager {
     return this.index.size;
   }
 
+  /** 查找所有键以 prefix 开头的缓存文件绝对路径 */
+  findByPrefix(prefix: string): string[] {
+    const result: string[] = [];
+    this.index.forEach((entry: CacheEntry, key: string) => {
+      if (key.startsWith(prefix)) {
+        result.push(this.rootDir + '/' + entry.file);
+      }
+    });
+    return result;
+  }
+
+  /** 设置缓存上限(字节) */
+  setLimit(bytes: number): void {
+    this.limitSize = bytes;
+  }
+
   // ---------------------------------------------------------------- 内部
 
   /** 计算缓存键的 SHA-256 十六进制哈希(用作文件名) */

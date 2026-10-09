@@ -366,7 +366,9 @@ export struct DetailPanel {
         Text(item.author).fontSize(FS_CAPTION).fontColor(MUTED_FG).margin({ top: 4 })
         Row({ space: 6 }) {
           this.tagChip(item.sourceType === ShelfSourceType.LOCAL ? '本地' : 'WEB源', PRIMARY_50, PRIMARY)
-          this.tagChip(item.isFavorite ? '已收藏' : '连载中', SUCCESS, '#FFFFFFFF')
+          if (item.isFavorite) {
+            this.tagChip('已收藏', SUCCESS, '#FFFFFFFF')
+          }
         }.margin({ top: 6 })
       }
       .alignItems(HorizontalAlign.Start).layoutWeight(1)

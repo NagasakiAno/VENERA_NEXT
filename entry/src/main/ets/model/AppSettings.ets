@@ -28,7 +28,12 @@ export class AppSettings {
     ['favorites', '[]'],           // 网络收藏 Tab
     ['searchSources', '[]'],       // 搜索可选源(key 列表)
     // === 阅读体验 ===
-    ['reverseChapterOrder', false]  // 章节倒序显示(详情页可临时切换)
+    ['reverseChapterOrder', false],  // 章节倒序显示(详情页可临时切换)
+    ['preloadPageCount', 3],         // 预加载漫画页数(阅读器翻页时提前加载的页数)
+    // === 缓存管理 ===
+    ['cacheLimit', 500 * 1024 * 1024],  // 图片缓存上限(字节), 默认 500MB
+    // === 法律声明 ===
+    ['disclaimerAccepted', false]  // 用户是否已同意免责声明
   ]);
 
   static getInstance(): AppSettings {
@@ -45,14 +50,16 @@ export class AppSettings {
       this.store = await preferences.getPreferences(context, options);
       const store = this.store;
       // 读取全部键, 合并到内存
-      const all: Object = await store.getAll();
-      const raw = all as Map<string, preferences.ValueType>;
-      raw.forEach((value: preferences.ValueType, key: string) => {
-        this.data.set(key, value as Object);
-      });
-      hilog.info(DOMAIN, TAG, 'AppSettings initialized, keys: %{public}d', raw.size);
+      const all: Record<string, preferences.ValueType> = await store.getAll() as Record<string, preferences.ValueType>;
+      const keys: string[] = Object.keys(all);
+      for (const key of keys) {
+        this.data.set(key, all[key] as Object);
+      }
+      hilog.info(DOMAIN, TAG, 'AppSettings initialized, keys: %{public}d', keys.length);
     } catch (e) {
-      hilog.error(DOMAIN, TAG, 'init failed: %{public}s', JSON.stringify(e));
+      const err = e as Error;
+      hilog.error(DOMAIN, TAG, 'init failed: name=%{public}s msg=%{public}s',
+        err.name, err.message);
     }
   }
 
@@ -76,6 +83,19 @@ export class AppSettings {
         hilog.error(DOMAIN, TAG, 'put failed for %{public}s: %{public}s',
           key, JSON.stringify(e));
       }
+    }
+  }
+
+  /** 同步写设置: 立即更新内存, 异步持久化(适用于需要立即生效的场景) */
+  public setSync(key: string, value: preferences.ValueType): void {
+    this.data.set(key, value as Object);
+    if (this.store) {
+      this.store.put(key, value)
+        .then(() => { this.store!.flush(); })
+        .catch((e: Error) => {
+          hilog.error(DOMAIN, TAG, 'setSync persist failed for %{public}s: %{public}s',
+            key, JSON.stringify(e));
+        });
     }
   }
 }
