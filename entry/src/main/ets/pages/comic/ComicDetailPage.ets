@@ -608,19 +608,20 @@ export struct ComicDetailPage {
       })
       .onTouch((e: TouchEvent) => { this.pressTouch(e, 'dl'); })
 
-      Column({ space: 2 }) {
-        SymbolGlyph($r('sys.symbol.share')).fontSize(22)
-          .fontColor([GRAY_500])
-        Text('碰一碰').fontSize(FS_SMALL).fontColor(MUTED_FG)
-      }
-      .width(72).height(48).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
-      .backgroundColor(GRAY_100)
-      .scale({ x: this.pressScaleOf('knock'), y: this.pressScaleOf('knock') })
-      .animation({ duration: 120, curve: Curve.EaseOut })
-      .onClick(() => {
-        this.startKnockShare();
-      })
-      .onTouch((e: TouchEvent) => { this.pressTouch(e, 'knock'); })
+      // 碰一碰分享按钮 - 暂时隐藏，后续完善后再放出
+      // Column({ space: 2 }) {
+      //   SymbolGlyph($r('sys.symbol.share')).fontSize(22)
+      //     .fontColor([GRAY_500])
+      //   Text('碰一碰').fontSize(FS_SMALL).fontColor(MUTED_FG)
+      // }
+      // .width(72).height(48).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
+      // .backgroundColor(GRAY_100)
+      // .scale({ x: this.pressScaleOf('knock'), y: this.pressScaleOf('knock') })
+      // .animation({ duration: 120, curve: Curve.EaseOut })
+      // .onClick(() => {
+      //   this.startKnockShare();
+      // })
+      // .onTouch((e: TouchEvent) => { this.pressTouch(e, 'knock'); })
 
       if (this.progress !== null) {
         Column({ space: 2 }) {
