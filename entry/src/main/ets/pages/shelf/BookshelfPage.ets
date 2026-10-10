@@ -19,9 +19,13 @@ import { common } from '@kit.AbilityKit';
 import { picker, fileIo as fs } from '@kit.CoreFileKit';
 import { createZipFile, ZipEntryInput } from '../../utils/ZipWriter';
 import { PRIMARY, PRIMARY_50, GRAY_500, GRAY_900, GRAY_100, CARD, BG,
-  MUTED_FG, ERROR, RADIUS_MD, RADIUS_LG, SPACE_3, FS_CAPTION, FS_SMALL } from '../../utils/Design';
+  MUTED_FG, ERROR, RADIUS_MD, RADIUS_LG, SPACE_3, FS_CAPTION, FS_SMALL, FS_SECTION } from '../../utils/Design';
 import { IS_WIDE, WIDTH_BP } from '../../utils/Breakpoints';
 import { SegmentButton, SegmentButtonItemTuple, SegmentButtonOptions } from '@kit.ArkUI';
+
+/** 按压缩放比例，模拟 systemMaterial interactive 物理形变 */
+const PRESS_SCALE = 0.92;
+const PRESS_DURATION = 120;
 
 @Component
 export struct BookshelfPage {
@@ -56,8 +60,16 @@ export struct BookshelfPage {
   @State favSearchKeyword: string = '';
   @State favSortMode: number = 0; // 0=添加顺序, 1=标题A-Z, 2=最新添加
   @State favShowSortMenu: boolean = false;
+  @State favSortSheetVisible: boolean = false;
   @State favSelectMode: boolean = false;
   @State favSelectedIds: string[] = [];
+  // 按压形变状态（模拟 systemMaterial interactive 物理效果）
+  @State pressManageBtn: boolean = false;
+  @State pressSelectBtn: boolean = false;
+  @State pressSearchBox: boolean = false;
+  @State pressSyncBtn: boolean = false;
+  @State pressSortBtn: boolean = false;
+  @State pressFolderBtn: boolean = false;
   // 网络收藏同步
   @State favSyncSources: ComicSourceMeta[] = [];
   @State favSyncFolders: NetworkFavoriteFolder[] = [];
@@ -151,8 +163,10 @@ export struct BookshelfPage {
 
   /** 切换收藏文件夹 */
   private switchFavFolder(name: string): void {
-    this.favCurrentFolder = name;
-    this.favItems = localFavoritesStore.getFolderComics(name);
+    animateTo({ duration: 300, curve: Curve.EaseInOut }, () => {
+      this.favCurrentFolder = name;
+      this.favItems = localFavoritesStore.getFolderComics(name);
+    });
     this.favShowFolderBar = false;
   }
 
@@ -974,6 +988,7 @@ export struct BookshelfPage {
               .backgroundColor(this.favCurrentFolder === name ? PRIMARY : GRAY_100)
               .borderRadius(16)
               .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .animation({ duration: 250, curve: Curve.EaseInOut })
               .onClick(() => { this.switchFavFolder(name); })
           }, (name: string) => name)
           // 新建文件夹按钮
@@ -1403,7 +1418,7 @@ export struct BookshelfPage {
         // 第一行: 文件夹栏 + 管理/选择按钮
         Row({ space: 6 }) {
           this.favFolderBar()
-          // 管理按钮（单删模式）— 窄屏只显示图标
+          // 管理按钮（单删模式）— 沉浸光感 + 按压形变
           if (!this.favSelectMode) {
             Row() {
               SymbolGlyph($r('sys.symbol.square_grid_2x2')).fontSize(14)
@@ -1413,12 +1428,27 @@ export struct BookshelfPage {
                   .fontColor(this.manageMode ? PRIMARY : GRAY_500).margin({ left: 4 })
               }
             }
-            .height(32).padding({ left: 10, right: 10 }).borderRadius(16)
-            .backgroundColor(this.manageMode ? PRIMARY_50 : GRAY_100)
+            .height(36).padding({ left: 12, right: 12 }).borderRadius(18)
+            .backgroundColor(this.manageMode ? PRIMARY_50 : '#E6FFFFFF')
+            .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+            .scale({ x: this.pressManageBtn ? PRESS_SCALE : 1, y: this.pressManageBtn ? PRESS_SCALE : 1 })
+            .animation({ duration: PRESS_DURATION, curve: Curve.EaseOut })
             .justifyContent(FlexAlign.Center)
-            .onClick(() => { this.toggleManage(); })
+            .gesture(
+              GestureGroup(GestureMode.Exclusive,
+                TapGesture().onAction(() => { this.toggleManage(); }),
+                LongPressGesture().onAction(() => {})
+              )
+            )
+            .onTouch((e: TouchEvent) => {
+              if (e.type === TouchType.Down) {
+                animateTo({ duration: PRESS_DURATION, curve: Curve.EaseOut }, () => { this.pressManageBtn = true; });
+              } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
+                animateTo({ duration: PRESS_DURATION, curve: Curve.EaseOut }, () => { this.pressManageBtn = false; });
+              }
+            })
           }
-          // 批量选择按钮 — 窄屏只显示图标
+          // 批量选择按钮 — 沉浸光感 + 按压形变
           Row() {
             SymbolGlyph($r('sys.symbol.checkmark_circle')).fontSize(14)
               .fontColor([this.favSelectMode ? PRIMARY : GRAY_500])
@@ -1427,49 +1457,108 @@ export struct BookshelfPage {
                 .fontColor(this.favSelectMode ? PRIMARY : GRAY_500).margin({ left: 4 })
             }
           }
-          .height(32).padding({ left: 10, right: 10 }).borderRadius(16)
-          .backgroundColor(this.favSelectMode ? PRIMARY_50 : GRAY_100)
+          .height(36).padding({ left: 12, right: 12 }).borderRadius(18)
+          .backgroundColor(this.favSelectMode ? PRIMARY_50 : '#E6FFFFFF')
+          .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+          .scale({ x: this.pressSelectBtn ? PRESS_SCALE : 1, y: this.pressSelectBtn ? PRESS_SCALE : 1 })
+          .animation({ duration: PRESS_DURATION, curve: Curve.EaseOut })
           .justifyContent(FlexAlign.Center)
           .onClick(() => { this.toggleFavSelectMode(); })
+          .onTouch((e: TouchEvent) => {
+            if (e.type === TouchType.Down) {
+              animateTo({ duration: PRESS_DURATION, curve: Curve.EaseOut }, () => { this.pressSelectBtn = true; });
+            } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
+              animateTo({ duration: PRESS_DURATION, curve: Curve.EaseOut }, () => { this.pressSelectBtn = false; });
+            }
+          })
         }
         .width('92%').margin({ top: 4, bottom: 4 })
 
         // 第二行: 搜索栏 + 排序按钮 + 文件夹管理
         Row({ space: 8 }) {
-          // 搜索输入框
-          TextInput({ placeholder: '搜索收藏...', text: this.favSearchKeyword })
-            .fontSize(FS_SMALL).fontColor(GRAY_900)
-            .backgroundColor(GRAY_100).borderRadius(16)
-            .height(32).layoutWeight(1)
-            .onChange((value: string) => {
-              this.favSearchKeyword = value;
-            })
-          // 网络收藏同步按钮
+          // 搜索输入框 — 沉浸光感胶囊样式（参照 SearchPage）+ 按压形变
+          Row() {
+            SymbolGlyph($r('sys.symbol.magnifyingglass')).fontSize(16).fontColor([MUTED_FG])
+              .margin({ left: 10, right: 6 })
+            TextInput({ placeholder: '搜索收藏...', text: this.favSearchKeyword })
+              .fontSize(FS_SMALL).fontColor(GRAY_900).placeholderColor(MUTED_FG)
+              .backgroundColor(Color.Transparent)
+              .height(40).layoutWeight(1)
+              .onChange((value: string) => {
+                this.favSearchKeyword = value;
+              })
+            if (this.favSearchKeyword.length > 0) {
+              SymbolGlyph($r('sys.symbol.xmark_circle_fill')).fontSize(16).fontColor([GRAY_500])
+                .margin({ right: 10 })
+                .onClick(() => { this.favSearchKeyword = ''; })
+            }
+          }
+          .height(40).borderRadius(20).layoutWeight(1)
+          .backgroundColor('#33FFFFFF')
+          .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+          .scale({ x: this.pressSearchBox ? PRESS_SCALE : 1, y: this.pressSearchBox ? PRESS_SCALE : 1 })
+          .animation({ duration: PRESS_DURATION, curve: Curve.EaseOut })
+          .alignItems(VerticalAlign.Center)
+          .onTouch((e: TouchEvent) => {
+            if (e.type === TouchType.Down) {
+              animateTo({ duration: PRESS_DURATION, curve: Curve.EaseOut }, () => { this.pressSearchBox = true; });
+            } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
+              animateTo({ duration: PRESS_DURATION, curve: Curve.EaseOut }, () => { this.pressSearchBox = false; });
+            }
+          })
+
+          // 网络收藏同步按钮 — 沉浸光感 + 按压形变
           Row() {
             SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(14)
               .fontColor([GRAY_500])
           }
-          .width(32).height(32).borderRadius(16)
-          .backgroundColor(GRAY_100).justifyContent(FlexAlign.Center)
+          .width(36).height(36).borderRadius(18)
+          .backgroundColor('#E6FFFFFF')
+          .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+          .scale({ x: this.pressSyncBtn ? PRESS_SCALE : 1, y: this.pressSyncBtn ? PRESS_SCALE : 1 })
+          .animation({ duration: PRESS_DURATION, curve: Curve.EaseOut })
+          .justifyContent(FlexAlign.Center)
           .onClick(() => { this.openSyncDialog(); })
-          // 排序按钮
+          .onTouch((e: TouchEvent) => {
+            if (e.type === TouchType.Down) {
+              animateTo({ duration: PRESS_DURATION, curve: Curve.EaseOut }, () => { this.pressSyncBtn = true; });
+            } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
+              animateTo({ duration: PRESS_DURATION, curve: Curve.EaseOut }, () => { this.pressSyncBtn = false; });
+            }
+          })
+          // 排序按钮 — 沉浸光感 + 按压形变，触发 BindSheet
           Row() {
             SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(14)
               .fontColor([GRAY_500])
           }
-          .width(32).height(32).borderRadius(16)
-          .backgroundColor(GRAY_100).justifyContent(FlexAlign.Center)
+          .width(36).height(36).borderRadius(18)
+          .backgroundColor('#E6FFFFFF')
+          .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+          .scale({ x: this.pressSortBtn ? PRESS_SCALE : 1, y: this.pressSortBtn ? PRESS_SCALE : 1 })
+          .animation({ duration: PRESS_DURATION, curve: Curve.EaseOut })
+          .justifyContent(FlexAlign.Center)
           .onClick(() => {
-            this.favShowSortMenu = !this.favShowSortMenu;
+            this.favSortSheetVisible = true;
           })
-          // 文件夹管理按钮（重命名/删除）
+          .onTouch((e: TouchEvent) => {
+            if (e.type === TouchType.Down) {
+              animateTo({ duration: PRESS_DURATION, curve: Curve.EaseOut }, () => { this.pressSortBtn = true; });
+            } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
+              animateTo({ duration: PRESS_DURATION, curve: Curve.EaseOut }, () => { this.pressSortBtn = false; });
+            }
+          })
+          // 文件夹管理按钮 — 沉浸光感 + 按压形变
           if (this.favCurrentFolder !== '收藏') {
             Row() {
               SymbolGlyph($r('sys.symbol.gearshape')).fontSize(14)
                 .fontColor([GRAY_500])
             }
-            .width(32).height(32).borderRadius(16)
-            .backgroundColor(GRAY_100).justifyContent(FlexAlign.Center)
+            .width(36).height(36).borderRadius(18)
+            .backgroundColor('#E6FFFFFF')
+            .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+            .scale({ x: this.pressFolderBtn ? PRESS_SCALE : 1, y: this.pressFolderBtn ? PRESS_SCALE : 1 })
+            .animation({ duration: PRESS_DURATION, curve: Curve.EaseOut })
+            .justifyContent(FlexAlign.Center)
             .onClick(() => {
               promptAction.showDialog({
                 title: '文件夹管理',
@@ -1487,27 +1576,16 @@ export struct BookshelfPage {
                 }
               }).catch((e: Error) => {});
             })
+            .onTouch((e: TouchEvent) => {
+              if (e.type === TouchType.Down) {
+                animateTo({ duration: PRESS_DURATION, curve: Curve.EaseOut }, () => { this.pressFolderBtn = true; });
+              } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
+                animateTo({ duration: PRESS_DURATION, curve: Curve.EaseOut }, () => { this.pressFolderBtn = false; });
+              }
+            })
           }
         }
         .width('92%').margin({ top: 2, bottom: 4 })
-
-        // 排序下拉菜单
-        if (this.favShowSortMenu) {
-          Column({ space: 0 }) {
-            Text('添加顺序').fontSize(FS_SMALL).fontColor(this.favSortMode === 0 ? PRIMARY : GRAY_900)
-              .width('100%').height(36).padding({ left: 16 })
-              .onClick(() => { this.switchSortMode(0); })
-            Text('标题 A-Z').fontSize(FS_SMALL).fontColor(this.favSortMode === 1 ? PRIMARY : GRAY_900)
-              .width('100%').height(36).padding({ left: 16 })
-              .onClick(() => { this.switchSortMode(1); })
-            Text('最新添加').fontSize(FS_SMALL).fontColor(this.favSortMode === 2 ? PRIMARY : GRAY_900)
-              .width('100%').height(36).padding({ left: 16 })
-              .onClick(() => { this.switchSortMode(2); })
-          }
-          .width('40%').backgroundColor(CARD).borderRadius(RADIUS_MD)
-          .shadow({ radius: 8, color: '#33000000', offsetX: 0, offsetY: 2 })
-          .margin({ left: '52%', top: 0 })
-        }
 
         // 批量选择模式下的操作工具栏
         if (this.favSelectMode) {
@@ -1668,6 +1746,49 @@ export struct BookshelfPage {
       .width('100%').height('100%').backgroundColor(BG)
     }
     .width('100%').height('100%')
+    .bindSheet(this.favSortSheetVisible, this.sortSheetBuilder(), {
+      height: SheetSize.FIT_CONTENT,
+      dragBar: true,
+      backgroundColor: Color.Transparent,
+      blurStyle: BlurStyle.COMPONENT_REGULAR,
+      onDisappear: () => { this.favSortSheetVisible = false; }
+    })
+  }
+
+  /** 排序 BindSheet 内容 — 沉浸光感样式 */
+  @Builder
+  sortSheetBuilder() {
+    Column({ space: 0 }) {
+      Text('排序方式').fontSize(FS_SECTION).fontColor(GRAY_900)
+        .fontWeight(FontWeight.Medium).margin({ bottom: 12 })
+
+      ForEach([
+        { mode: 0, label: '添加顺序' },
+        { mode: 1, label: '标题 A-Z' },
+        { mode: 2, label: '最新添加' }
+      ], (item: Record<string, number | string>) => {
+        Row() {
+          Text(item['label'] as string).fontSize(FS_SMALL)
+            .fontColor(this.favSortMode === item['mode'] ? PRIMARY : GRAY_900)
+          if (this.favSortMode === item['mode']) {
+            SymbolGlyph($r('sys.symbol.checkmark')).fontSize(14).fontColor([PRIMARY])
+              .margin({ left: 8 })
+          }
+          Blank()
+        }
+        .width('100%').height(44).padding({ left: 16, right: 16 })
+        .borderRadius(12)
+        .backgroundColor(this.favSortMode === item['mode'] ? PRIMARY_50 : Color.Transparent)
+        .onClick(() => {
+          this.switchSortMode(item['mode'] as number);
+          this.favSortSheetVisible = false;
+        })
+      }, (item: Record<string, number | string>) => `sort#${item['mode']}`)
+    }
+    .width('100%').padding({ left: 20, right: 20, top: 16, bottom: 24 })
+    .backgroundColor('#E6FFFFFF')
+    .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+    .borderRadius({ topLeft: 24, topRight: 24 })
   }
 }
 
