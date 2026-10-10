@@ -41,8 +41,23 @@ export struct ComicSourcePage {
   @State urlInput: string = '';
   @State showApiDoc: boolean = false;
   @State savingDoc: boolean = false;
+  // 按压缩放交互(与全局交互统一)
+  @State pressedKey: string = '';
 
   private ctx: common.UIAbilityContext | null = null;
+
+  // 按压缩放交互处理(与全局统一: 120ms EaseOut)
+  pressTouch(e: TouchEvent, key: string): void {
+    if (e.type === TouchType.Down) {
+      animateTo({ duration: 120, curve: Curve.EaseOut }, () => { this.pressedKey = key; });
+    } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
+      animateTo({ duration: 120, curve: Curve.EaseOut }, () => { this.pressedKey = ''; });
+    }
+  }
+
+  pressScaleOf(key: string): number {
+    return this.pressedKey === key ? 0.92 : 1;
+  }
 
   /** 显示加载遮罩 */
   private startLoading(text: string): void {
@@ -75,19 +90,22 @@ export struct ComicSourcePage {
     return true;
   }
 
-  /** 保存接口文档到本地文件 */
+  /** 保存接口文档到临时文件系统(应用沙箱临时目录) */
   private async saveApiDoc(): Promise<void> {
     if (this.ctx === null) {
       return;
     }
     this.savingDoc = true;
     try {
-      const dir = this.ctx.filesDir;
+      // 临时文件系统接口: 写入 ctx.tempDir, 目录不存在则先创建
+      const dir = this.ctx.tempDir;
+      if (!fs.accessSync(dir)) {
+        fs.mkdirSync(dir, true);
+      }
       const path = dir + '/source_api_doc.md';
-      const file = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
-      const encoder = util.TextEncoder.create('utf-8');
-      const encoded = encoder.encodeInto(SOURCE_API_DOC);
-      fs.writeSync(file.fd, encoded.buffer);
+      const file = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
+      // writeSync 直接接受字符串(内部 UTF-8 编码), 绕开 TextEncoder 缓冲隐患
+      fs.writeSync(file.fd, SOURCE_API_DOC);
       fs.closeSync(file);
       promptAction.showToast({ message: '已保存到: ' + path });
     } catch (e) {
@@ -359,7 +377,10 @@ export struct ComicSourcePage {
                   }
                   .height(30).padding({ left: 14, right: 14 }).borderRadius(15)
                   .backgroundColor(PRIMARY).justifyContent(FlexAlign.Center)
+                  .scale({ x: this.pressScaleOf('add' + entry.key), y: this.pressScaleOf('add' + entry.key) })
+                  .animation({ duration: 120, curve: Curve.EaseOut })
                   .onClick(() => { this.installFromRepo(entry); })
+                  .onTouch((e: TouchEvent) => { this.pressTouch(e, 'add' + entry.key); })
                 }
               }
               .width('100%').height(56).padding({ left: SPACE_3, right: SPACE_3 })
@@ -479,21 +500,6 @@ export struct ComicSourcePage {
         .width('92%').height(40).padding({ left: SPACE_3, right: SPACE_3 })
         .backgroundColor(CARD).borderRadius(RADIUS_MD).margin({ top: 8 })
 
-        // 接口文档入口
-        Row() {
-          Text('源搭建接口文档').fontSize(FS_SMALL).fontColor(PRIMARY).layoutWeight(1)
-          if (this.savingDoc) {
-            LoadingProgress().width(16).height(16).color(PRIMARY)
-          } else {
-            Text('保存').fontSize(FS_SMALL).fontColor(PRIMARY)
-              .onClick(() => { this.saveApiDoc(); })
-          }
-          Text('查看').fontSize(FS_SMALL).fontColor(PRIMARY).margin({ left: 16 })
-            .onClick(() => { this.showApiDoc = true; })
-        }
-        .width('92%').height(40).padding({ left: SPACE_3, right: SPACE_3 })
-        .backgroundColor(CARD).borderRadius(RADIUS_MD).margin({ top: 8 })
-
         // 源列表 / 空态
         if (this.sources.length === 0) {
           Column({ space: 8 }) {
@@ -525,7 +531,7 @@ export struct ComicSourcePage {
         }
         .width('100%').height('100%')
         .backgroundColor('#331A1A1E')
-        .transition(TransitionEffect.OPACITY.animation({ duration: 200 }))
+        .transition(TransitionEffect.OPACITY.animation({ duration: 200, curve: Curve.EaseOut }))
       }
 
       // 接口文档弹层
@@ -563,45 +569,7 @@ export struct ComicSourcePage {
           .width('100%').layoutWeight(1).scrollBar(BarState.Auto)
         }
         .width('100%').height('100%').backgroundColor(BG)
-        .transition(TransitionEffect.OPACITY.animation({ duration: 200 }))
-      }
-
-      // 接口文档弹层
-      if (this.showApiDoc) {
-        Column() {
-          // 顶栏
-          Row() {
-            Row() {
-              SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(18).fontColor([GRAY_500])
-            }
-            .width(36).height(36).borderRadius(18).backgroundColor(CARD)
-            .justifyContent(FlexAlign.Center)
-            .onClick(() => { this.showApiDoc = false; })
-
-            Text('源搭建接口文档').fontSize(FS_TITLE).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
-              .layoutWeight(1).textAlign(TextAlign.Center)
-
-            Row() {
-              if (this.savingDoc) {
-                LoadingProgress().width(16).height(16).color(PRIMARY)
-              } else {
-                Text('保存').fontSize(FS_SMALL).fontColor(PRIMARY)
-              }
-            }
-            .width(48).height(36).justifyContent(FlexAlign.Center)
-            .onClick(() => { this.saveApiDoc(); })
-          }
-          .width('100%').height(52).padding({ left: SPACE_3, right: SPACE_3 })
-
-          Scroll() {
-            Text(SOURCE_API_DOC)
-              .fontSize(12).fontColor(GRAY_900).lineHeight(18)
-              .width('100%')
-          }
-          .width('100%').layoutWeight(1).scrollBar(BarState.Auto)
-        }
-        .width('100%').height('100%').backgroundColor(BG)
-        .transition(TransitionEffect.OPACITY.animation({ duration: 200 }))
+        .transition(TransitionEffect.OPACITY.animation({ duration: 200, curve: Curve.EaseOut }))
       }
 
       // 全局加载遮罩(网络操作时提示, 防误以为卡死)

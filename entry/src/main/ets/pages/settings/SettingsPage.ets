@@ -352,7 +352,12 @@ export struct SettingsPage {
             }
             .margin({ top: 16 })
           }
-          .width('80%').padding(SPACE_4).backgroundColor(CARD).borderRadius(RADIUS_LG)
+          .width('80%').padding(SPACE_4)
+          // 半透明模糊材质底框(与全局弹层统一)
+          .backgroundColor('#B3FFFFFF')
+          .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+          .clip(true)
+          .borderRadius(RADIUS_LG)
         }
         .width('100%').height('100%')
         .backgroundColor('#99000000')
@@ -388,7 +393,12 @@ export struct SettingsPage {
             }
             .margin({ top: 16 })
           }
-          .width('85%').padding(SPACE_4).backgroundColor(CARD).borderRadius(RADIUS_LG)
+          .width('85%').padding(SPACE_4)
+          // 半透明模糊材质底框(与全局弹层统一)
+          .backgroundColor('#B3FFFFFF')
+          .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+          .clip(true)
+          .borderRadius(RADIUS_LG)
         }
         .width('100%').height('100%')
         .backgroundColor('#99000000')

@@ -14,7 +14,7 @@ import { networkFavoritesService, NetworkFavoriteFolder } from '../../services/N
 import { readHistoryService, ReadHistoryItem } from '../../services/ReadHistoryService';
 import { ComicSourceMeta } from '../../model/sources/ComicSourceMeta';
 import { comicSourceManager } from '../../model/ComicSource';
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, uiMaterial } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { picker, fileIo as fs } from '@kit.CoreFileKit';
 import { createZipFile, ZipEntryInput } from '../../utils/ZipWriter';
@@ -1749,13 +1749,15 @@ export struct BookshelfPage {
     .bindSheet(this.favSortSheetVisible, this.sortSheetBuilder(), {
       height: SheetSize.FIT_CONTENT,
       dragBar: true,
+      showClose: false,
       backgroundColor: Color.Transparent,
-      blurStyle: BlurStyle.COMPONENT_REGULAR,
+      // 弹窗类组件属于沉浸光感的生效范围(与 SearchPage 筛选面板一致)
+      systemMaterial: new uiMaterial.ImmersiveMaterial({}),
       onDisappear: () => { this.favSortSheetVisible = false; }
     })
   }
 
-  /** 排序 BindSheet 内容 — 沉浸光感样式 */
+  /** 排序 BindSheet 内容 — 透明内容区, 材质由弹层 systemMaterial 提供 */
   @Builder
   sortSheetBuilder() {
     Column({ space: 0 }) {
@@ -1786,9 +1788,6 @@ export struct BookshelfPage {
       }, (item: Record<string, number | string>) => `sort#${item['mode']}`)
     }
     .width('100%').padding({ left: 20, right: 20, top: 16, bottom: 24 })
-    .backgroundColor('#E6FFFFFF')
-    .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
-    .borderRadius({ topLeft: 24, topRight: 24 })
   }
 }
 

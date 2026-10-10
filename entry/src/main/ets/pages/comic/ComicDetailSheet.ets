@@ -11,6 +11,7 @@
 import { ComicDetailPage } from './ComicDetailPage';
 import { GRAY_100, BG } from '../../utils/Design';
 import { IS_WIDE } from '../../utils/Breakpoints';
+import { uiMaterial } from '@kit.ArkUI';
 
 @Component
 export struct ComicDetailSheet {
@@ -86,6 +87,8 @@ export struct ComicDetailSheet {
       dragBar: false,
       backgroundColor: Color.Transparent,
       showClose: false,
+      // 弹窗类组件属于沉浸光感的生效范围(与 Search/Bookshelf 弹层一致)
+      systemMaterial: new uiMaterial.ImmersiveMaterial({}),
       onDisappear: (): void => {
         this.onClose();
       }

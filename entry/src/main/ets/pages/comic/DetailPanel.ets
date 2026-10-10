@@ -26,6 +26,22 @@ export struct DetailPanel {
   @State editingField: number = 0;
   @State editDesc: string = '';
   @State editTags: string = '';
+  // 按压形变状态(共享 key, 模拟 systemMaterial interactive 物理效果)
+  @State pressedKey: string = '';
+
+  /** 按压形变触摸处理: Down 缩放 / Up·Cancel 恢复 */
+  pressTouch(e: TouchEvent, key: string): void {
+    if (e.type === TouchType.Down) {
+      animateTo({ duration: 120, curve: Curve.EaseOut }, () => { this.pressedKey = key; });
+    } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
+      animateTo({ duration: 120, curve: Curve.EaseOut }, () => { this.pressedKey = ''; });
+    }
+  }
+
+  /** 按压缩放值 */
+  pressScaleOf(key: string): number {
+    return this.pressedKey === key ? 0.92 : 1;
+  }
 
   aboutToAppear(): void {
     const it = findShelfItem(this.itemId);
@@ -68,8 +84,10 @@ export struct DetailPanel {
         Text(item.isFavorite ? '已收藏' : '收藏').fontSize(FS_SMALL).fontColor(MUTED_FG)
       }
       .width(56).height(48).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD).backgroundColor(GRAY_100)
+      .scale({ x: this.pressScaleOf('fav'), y: this.pressScaleOf('fav') })
+      .animation({ duration: 120, curve: Curve.EaseOut })
       .onClick(() => { this.toggleFavorite(item); })
-      .onClick(() => { this.toggleFavorite(item); })
+      .onTouch((e: TouchEvent) => { this.pressTouch(e, 'fav'); })
 
       if (item.lastReadPage > 0) {
         Column() {
@@ -79,21 +97,30 @@ export struct DetailPanel {
         }
         .height(48).layoutWeight(1).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
         .backgroundColor(WARNING)
+        .scale({ x: this.pressScaleOf('continue'), y: this.pressScaleOf('continue') })
+        .animation({ duration: 120, curve: Curve.EaseOut })
         .onClick(() => { this.onStartRead(item, 0); })
+        .onTouch((e: TouchEvent) => { this.pressTouch(e, 'continue'); })
 
         Column() {
           Text('从头阅读').fontSize(15).fontColor(CARD).fontWeight(FontWeight.Medium)
         }
         .height(48).layoutWeight(1).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
         .backgroundColor(PRIMARY)
+        .scale({ x: this.pressScaleOf('restart'), y: this.pressScaleOf('restart') })
+        .animation({ duration: 120, curve: Curve.EaseOut })
         .onClick(() => { this.onStartRead(item, 0); })
+        .onTouch((e: TouchEvent) => { this.pressTouch(e, 'restart'); })
       } else {
         Column() {
           Text('开始阅读').fontSize(15).fontColor(CARD).fontWeight(FontWeight.Medium)
         }
         .height(48).layoutWeight(1).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
         .backgroundColor(PRIMARY)
+        .scale({ x: this.pressScaleOf('start'), y: this.pressScaleOf('start') })
+        .animation({ duration: 120, curve: Curve.EaseOut })
         .onClick(() => { this.onStartRead(item, 0); })
+        .onTouch((e: TouchEvent) => { this.pressTouch(e, 'start'); })
       }
     }
     .width('100%').margin({ top: SPACE_3 })

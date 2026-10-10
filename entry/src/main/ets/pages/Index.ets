@@ -13,11 +13,11 @@ import { DetailPanel } from './comic/DetailPanel';
 import { ComicDetailSheet } from './comic/ComicDetailSheet';
 import { ReaderPage } from './comic/ReaderPage';
 import { ReaderSession } from './comic/ReaderSession';
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, uiMaterial } from '@kit.ArkUI';
 import { ShelfItem, ShelfSourceType } from '../model/ShelfItem';
 import { ReaderChapter } from '../model/ReaderModel';
 import { ensureBookData } from '../utils/FileImporter';
-import { PRIMARY, GRAY_500, CARD, BG, FS_SMALL, RADIUS_LG, GRAY_100 } from '../utils/Design';
+import { PRIMARY, GRAY_500, GRAY_900, CARD, BG, FS_SMALL, RADIUS_LG, GRAY_100 } from '../utils/Design';
 import { IS_WIDE, WIDTH_BP } from '../utils/Breakpoints';
 import { HdsTabs, HdsTabsController, hdsMaterial } from '@kit.UIDesignKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
@@ -44,10 +44,56 @@ struct Index {
   @StorageLink('globalReaderVisible') readerVisible: boolean = false;
   @StorageLink('globalReaderSession') readerSession: ReaderSession = new ReaderSession();
 
+  // ===== 启动品牌页(与系统启动窗无缝衔接) =====
+  @State splashGone: boolean = false;
+  @State splashOpacity: number = 1;
+  @State splashLogoScale: number = 0.82;
+  @State splashLogoOpacity: number = 0;
+  @State splashBrandOpacity: number = 0;
+  @State splashBrandY: number = 12;
+  @State splashLoaderOpacity: number = 0;
+  private splashTimers: number[] = [];
+
   tabSymbol(index: number): Resource {
     if (index === 0) { return $r('sys.symbol.square_grid_2x2'); }
     if (index === 1) { return $r('sys.symbol.magnifyingglass'); }
     return $r('sys.symbol.gearshape');
+  }
+
+  // ===== 启动品牌页编排: logo 弹入 -> 品牌字上浮 -> 加载点淡入 -> 整体淡出 =====
+  aboutToAppear(): void {
+    // logo 弹入(400ms EaseOut)
+    animateTo({ duration: 400, curve: Curve.EaseOut }, () => {
+      this.splashLogoScale = 1;
+      this.splashLogoOpacity = 1;
+    });
+    // 品牌字上浮(延迟 150ms)
+    this.splashTimers.push(setTimeout(() => {
+      animateTo({ duration: 350, curve: Curve.EaseOut }, () => {
+        this.splashBrandOpacity = 1;
+        this.splashBrandY = 0;
+      });
+    }, 150));
+    // 加载点淡入(延迟 300ms)
+    this.splashTimers.push(setTimeout(() => {
+      animateTo({ duration: 300, curve: Curve.EaseOut }, () => {
+        this.splashLoaderOpacity = 1;
+      });
+    }, 300));
+    // 整体淡出(1.5s 后), 释放定时器
+    this.splashTimers.push(setTimeout(() => {
+      animateTo({
+        duration: 350, curve: Curve.EaseOut,
+        onFinish: () => { this.splashGone = true; }
+      }, () => {
+        this.splashOpacity = 0;
+      });
+    }, 1500));
+  }
+
+  aboutToDisappear(): void {
+    this.splashTimers.forEach((t: number) => clearTimeout(t));
+    this.splashTimers = [];
   }
 
   // ===== 详情面板控制 =====
@@ -230,6 +276,8 @@ struct Index {
       dragBar: false,
       backgroundColor: Color.Transparent,
       showClose: false,
+      // 弹窗类组件属于沉浸光感的生效范围(与 Search/Bookshelf 弹层一致)
+      systemMaterial: new uiMaterial.ImmersiveMaterial({}),
       onDisappear: (): void => { this.showDetail = false; }
     })
   }
@@ -353,6 +401,43 @@ struct Index {
     .width('100%').height('100%')
   }
 
+  /** 启动品牌页: 与系统启动窗同底色无缝衔接, logo 弹入 + 品牌字上浮 + 加载点 */
+  @Builder
+  splashOverlay() {
+    Column({ space: 20 }) {
+      // LOGO(应用 LOGO 图, 圆角容器 + 柔和投影)
+      Image($r('app.media.app_logo'))
+        .width(96).height(96)
+        .borderRadius(24)
+        .objectFit(ImageFit.Cover)
+        .shadow({ radius: 24, color: '#1A145CDE', offsetY: 8 })
+        .scale({ x: this.splashLogoScale, y: this.splashLogoScale })
+        .opacity(this.splashLogoOpacity)
+        .animation({ duration: 400, curve: Curve.EaseOut })
+
+      // 品牌字
+      Text('VENERA')
+        .fontSize(22).fontWeight(FontWeight.Bold)
+        .fontColor(GRAY_900)
+        .letterSpacing(6)
+        .opacity(this.splashBrandOpacity)
+        .translate({ y: this.splashBrandY })
+        .animation({ duration: 350, curve: Curve.EaseOut })
+
+      // 加载点
+      LoadingProgress()
+        .width(22).height(22)
+        .color(PRIMARY)
+        .opacity(this.splashLoaderOpacity)
+        .animation({ duration: 300, curve: Curve.EaseOut })
+    }
+    .width('100%').height('100%')
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor('#F1F3F5')
+    .opacity(this.splashOpacity)
+    .animation({ duration: 350, curve: Curve.EaseOut })
+  }
+
   build() {
     Stack() {
       // 页面内容层: 整体下移 40 避免入侵状态栏
@@ -411,6 +496,11 @@ struct Index {
           onBack: (): void => this.closeReader()
         })
         .width('100%').height('100%')
+      }
+
+      // 启动品牌页(最顶层, 1.5s 后自动淡出)
+      if (!this.splashGone) {
+        this.splashOverlay()
       }
     }
     .width('100%').height('100%').backgroundColor(BG)

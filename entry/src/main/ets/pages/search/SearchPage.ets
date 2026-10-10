@@ -832,7 +832,7 @@ export struct SearchPage {
     .padding({ left: SPACE_3, right: SPACE_3, bottom: SPACE_2 })
     .margin({ top: TITLE_BAR_H + SPACE_2 })
     .transition(TransitionEffect.move(TransitionEdge.TOP)
-      .animation({ duration: 260, curve: Curve.Friction }))
+      .animation({ duration: 260, curve: Curve.EaseOut }))
   }
 
   @Builder
@@ -951,6 +951,7 @@ export struct SearchPage {
       height: SheetSize.FIT_CONTENT,
       title: { title: '筛选' },
       dragBar: true,
+      showClose: false,
       // 弹窗类组件属于沉浸光感的生效范围
       systemMaterial: new uiMaterial.ImmersiveMaterial({}),
       onDisappear: () => {

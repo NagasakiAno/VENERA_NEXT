@@ -506,7 +506,7 @@ export struct SourceDetailPage {
         .width('100%').height('100%')
         .backgroundColor('#20000000')
         .justifyContent(FlexAlign.Center)
-        .transition(TransitionEffect.OPACITY.animation({ duration: 150 }))
+        .transition(TransitionEffect.OPACITY.animation({ duration: 150, curve: Curve.EaseOut }))
       }
     }
     .width('100%').height('100%')

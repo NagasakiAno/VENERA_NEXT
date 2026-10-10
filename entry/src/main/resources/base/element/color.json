@@ -1,6 +1,6 @@
 {
   "color": [
-    { "name": "start_window_background", "value": "#FFFFFF" },
+    { "name": "start_window_background", "value": "#F1F3F5" },
 
     { "name": "brand_primary_50", "value": "#EBF2FF" },
     { "name": "brand_primary_100", "value": "#D6E4FF" },

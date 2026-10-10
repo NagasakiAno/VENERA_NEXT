@@ -1,0 +1,23 @@
+# Define project specific obfuscation rules here.
+# You can include the obfuscation configuration files in the current module's build-profile.json5.
+#
+# For the more detailed information about obfuscation, please visit:
+#   https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/source-obfuscation
+
+# Obfuscation options:
+# -disable-obfuscation: disable all obfuscations
+# -enable-property-obfuscation: obfuscate the property names
+# -enable-toplevel-obfuscation: obfuscate the names in the global scope
+# -enable-filename-obfuscation: obfuscate the filename
+# -enable-export-obfuscation: obfuscate the names being exported
+# -compact: remove unnecessary blank spaces and all line feeds
+# -remove-log: remove all console.* statements
+# -print-namecache: print the name cache that contains the mapping from old names to new names
+# -apply-namecache: reuse the given cache file
+
+# Keep options:
+# -keep-property-name: specifies property names that you want to keep
+# -keep-global-name: specifies names that you want to keep in the global scope
+
+# 当前 release 构建未启用混淆(enable: false), 此文件仅作为规则占位。
+# 如启用混淆, 注意本应用大量使用 JSON.parse 动态取值, 需保留相关属性名。
