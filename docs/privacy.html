@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VeneraNext 隐私政策</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:"HarmonyOS Sans SC","Microsoft YaHei","Segoe UI",sans-serif;
+    background:#F5F7FA; color:#182431; line-height:1.8; }
+  .container { max-width:860px; margin:0 auto; padding:40px 24px 80px; }
+  .header { text-align:center; margin-bottom:48px; padding-bottom:32px;
+    border-bottom:1px solid #E1E6EB; }
+  .header .logo { width:64px; height:64px; border-radius:16px; margin:0 auto 16px;
+    background:linear-gradient(135deg,#145CDE,#4D8BFF);
+    display:flex; align-items:center; justify-content:center;
+    color:#fff; font-size:28px; font-weight:800; }
+  .header h1 { font-size:32px; font-weight:700; color:#182431; }
+  .header .meta { margin-top:12px; font-size:14px; color:#909399; }
+  .header .meta span { margin:0 8px; }
+  .section { margin-bottom:36px; }
+  .section h2 { font-size:22px; font-weight:700; color:#182431; margin-bottom:16px;
+    padding-left:12px; border-left:4px solid #145CDE; }
+  .section h3 { font-size:17px; font-weight:600; color:#182431; margin:20px 0 10px; }
+  .section p { font-size:15px; color:#4A5568; margin-bottom:12px; }
+  .section ul { margin:8px 0 16px 20px; }
+  .section li { font-size:15px; color:#4A5568; margin-bottom:8px; }
+  .section strong { color:#182431; font-weight:600; }
+  .highlight { background:#EBF2FF; border-radius:8px; padding:16px 20px; margin:16px 0;
+    border-left:4px solid #145CDE; }
+  .highlight p { color:#0A4FBF; margin:0; }
+  .warning { background:#FFF3E0; border-radius:8px; padding:16px 20px; margin:16px 0;
+    border-left:4px solid #FA8C16; }
+  .warning p { color:#8B5E14; margin:0; }
+  .table { width:100%; border-collapse:collapse; margin:16px 0; }
+  .table th, .table td { border:1px solid #E1E6EB; padding:12px 16px; text-align:left;
+    font-size:14px; }
+  .table th { background:#F5F7FA; font-weight:600; color:#182431; }
+  .table td { color:#4A5568; }
+  .footer { text-align:center; margin-top:48px; padding-top:32px;
+    border-top:1px solid #E1E6EB; font-size:13px; color:#909399; }
+  .footer a { color:#145CDE; text-decoration:none; }
+  .toc { background:#fff; border-radius:12px; padding:24px; margin-bottom:40px;
+    box-shadow:0 2px 8px rgba(0,0,0,0.04); }
+  .toc h3 { font-size:16px; font-weight:600; margin-bottom:12px; color:#182431; }
+  .toc ol { margin-left:20px; }
+  .toc li { font-size:14px; margin-bottom:6px; }
+  .toc a { color:#145CDE; text-decoration:none; }
+  .toc a:hover { text-decoration:underline; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <div class="logo">V</div>
+    <h1>VeneraNext 隐私政策</h1>
+    <div class="meta">
+      <span>最后更新：2026年10月13日</span>
+      <span>|</span>
+      <span>版本：1.0.6</span>
+      <span>|</span>
+      <span>Bundle ID：com.venera.next</span>
+    </div>
+  </div>
+
+  <div class="toc">
+    <h3>目录</h3>
+    <ol>
+      <li><a href="#intro">引言</a></li>
+      <li><a href="#collect">信息收集与使用</a></li>
+      <li><a href="#local">本地数据存储</a></li>
+      <li><a href="#source">第三方源插件的数据处理</a></li>
+      <li><a href="#network">网络通信</a></li>
+      <li><a href="#permissions">应用权限说明</a></li>
+      <li><a href="#children">儿童隐私</a></li>
+      <li><a href="#rights">您的权利</a></li>
+      <li><a href="#changes">政策变更</a></li>
+      <li><a href="#contact">联系我们</a></li>
+    </ol>
+  </div>
+
+  <div class="section" id="intro">
+    <h2>1. 引言</h2>
+    <p>VeneraNext（以下简称"本应用"）是一款基于 HarmonyOS 的开源漫画阅读器，采用 JS 源插件系统作为漫画数据来源。本应用本身<strong>不提供、不存储、不传播</strong>任何漫画内容。</p>
+    <p>我们高度重视您的隐私。本隐私政策旨在说明本应用如何处理与您相关的信息。请仔细阅读本政策，了解我们对您信息的处理方式。</p>
+    <div class="highlight">
+      <p><strong>核心原则：</strong>本应用不收集、不上传、不分享用户的任何个人信息。所有用户数据均存储在本地设备上。</p>
+    </div>
+  </div>
+
+  <div class="section" id="collect">
+    <h2>2. 信息收集与使用</h2>
+    <h3>2.1 本应用直接收集的信息</h3>
+    <p>本应用<strong>不主动收集任何用户个人信息</strong>，包括但不限于：</p>
+    <ul>
+      <li>不收集姓名、电话、邮箱等身份信息</li>
+      <li>不收集设备标识符（IMEI、OAID 等）</li>
+      <li>不收集位置信息</li>
+      <li>不收集使用行为分析数据</li>
+      <li>不向任何服务器发送用户追踪数据</li>
+    </ul>
+
+    <h3>2.2 用户主动输入的信息</h3>
+    <p>用户在使用本应用时，可能主动输入以下信息，这些信息<strong>仅存储在本地设备</strong>，不会上传至本应用的任何服务器：</p>
+    <table class="table">
+      <thead>
+        <tr><th>信息类型</th><th>用途</th><th>存储位置</th><th>是否上传</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>源插件登录凭据（账号/密码/Cookie）</td><td>登录第三方漫画网站</td><td>本地设备</td><td>否（仅传递给对应源插件）</td></tr>
+        <tr><td>阅读进度</td><td>记录用户阅读位置</td><td>本地设备</td><td>否</td></tr>
+        <tr><td>收藏记录</td><td>管理用户收藏的漫画</td><td>本地设备</td><td>否</td></tr>
+        <tr><td>本地导入的漫画文件</td><td>本地阅读</td><td>本地设备</td><td>否</td></tr>
+        <tr><td>源插件配置与持久化数据</td><td>源插件运行所需</td><td>本地设备</td><td>否</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section" id="local">
+    <h2>3. 本地数据存储</h2>
+    <p>本应用的所有用户数据均存储在用户本地设备的应用沙箱目录中，具体包括：</p>
+    <ul>
+      <li><strong>阅读进度与收藏：</strong>存储在应用本地数据库中，仅用户本人可访问</li>
+      <li><strong>登录凭据：</strong>源插件的账号密码、Cookie 等认证信息存储在本地，不会同步至云端</li>
+      <li><strong>阅读缓存：</strong>漫画图片缓存仅存在于本地设备，可在设置中手动清除</li>
+      <li><strong>下载内容：</strong>用户下载的漫画章节存储在本地，可在书架管理中删除</li>
+    </ul>
+    <div class="highlight">
+      <p>用户卸载本应用后，所有本地数据将被自动清除。本应用不提供任何云端数据备份或同步服务。</p>
+    </div>
+  </div>
+
+  <div class="section" id="source">
+    <h2>4. 第三方源插件的数据处理</h2>
+    <p>本应用的核心功能依赖于用户自行安装的第三方源插件（JS 脚本）。源插件在运行时具备网络请求和本地数据读写能力。</p>
+    <div class="warning">
+      <p><strong>重要提示：</strong>源插件由第三方开发者独立编写和维护，与本应用开发团队无任何关联。源插件可能收集、处理或上传用户数据，此类行为完全由源插件自行决定，本应用无法控制也不承担责任。</p>
+    </div>
+    <h3>4.1 源插件可能涉及的数据行为</h3>
+    <ul>
+      <li>向第三方漫画网站发送登录请求（含用户输入的账号密码）</li>
+      <li>向第三方漫画网站发送阅读进度同步请求</li>
+      <li>读取和写入本地持久化数据</li>
+      <li>发起网络请求获取漫画内容</li>
+    </ul>
+    <h3>4.2 用户注意事项</h3>
+    <ul>
+      <li>安装源插件前，应<strong>仔细审查源代码</strong>，确认其安全性</li>
+      <li>仅从可信渠道获取源插件</li>
+      <li>审慎评估是否信任某个源插件处理您的登录凭据</li>
+      <li>定期检查已安装源插件的更新与变更</li>
+      <li>如对某个源插件的数据行为有疑问，请联系该源插件的开发者</li>
+    </ul>
+    <p>本应用对源插件的行为<strong>不进行事前审查</strong>，不对源插件的安全性做任何担保。因源插件导致的任何数据泄露或损失，由用户自行承担。</p>
+  </div>
+
+  <div class="section" id="network">
+    <h2>5. 网络通信</h2>
+    <p>本应用的网络通信仅发生在以下场景：</p>
+    <table class="table">
+      <thead>
+        <tr><th>场景</th><th>通信对象</th><th>传输内容</th><th>目的</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>源插件获取漫画内容</td><td>第三方漫画网站</td><td>漫画页面数据</td><td>展示漫画内容</td></tr>
+        <tr><td>源插件登录</td><td>第三方漫画网站</td><td>用户输入的凭据</td><td>账号登录</td></tr>
+        <tr><td>源插件同步数据</td><td>第三方漫画网站</td><td>阅读进度/收藏</td><td>回源同步</td></tr>
+        <tr><td>华为分享</td><td>附近设备</td><td>漫画详情链接</td><td>分享漫画信息</td></tr>
+      </tbody>
+    </table>
+    <p>所有网络请求均由源插件发起，本应用本身<strong>不与任何自有服务器通信</strong>，不发送任何遥测数据或分析数据。</p>
+  </div>
+
+  <div class="section" id="permissions">
+    <h2>6. 应用权限说明</h2>
+    <p>本应用申请的系统权限及其用途如下：</p>
+    <table class="table">
+      <thead>
+        <tr><th>权限</th><th>用途</th><th>是否涉及隐私数据</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>网络访问</td><td>源插件获取漫画内容</td><td>否（本应用不收集数据）</td></tr>
+        <tr><td>本地文件读写</td><td>导入本地漫画、存储阅读缓存</td><td>否（仅本地操作）</td></tr>
+        <tr><td>华为分享</td><td>分享漫画详情到附近设备</td><td>否（用户主动触发）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section" id="children">
+    <h2>7. 儿童隐私</h2>
+    <p>本应用不针对 13 岁以下的儿童，也不有意收集儿童的个人信息。由于本应用不收集任何用户的个人信息，因此同样不收集儿童信息。</p>
+    <p>如果家长或监护人发现儿童通过本应用提供了个人信息（例如通过源插件登录第三方网站），建议联系对应源插件的开发者处理。本应用本身无法获取或控制这些信息。</p>
+  </div>
+
+  <div class="section" id="rights">
+    <h2>8. 您的权利</h2>
+    <p>由于本应用不收集任何用户个人信息，您无需通过本应用行使数据权利。您对本地数据拥有完全控制权：</p>
+    <ul>
+      <li><strong>查看数据：</strong>所有数据存储在本地，您可随时在应用内查看</li>
+      <li><strong>删除数据：</strong>可在应用设置中清除阅读缓存、下载内容、收藏记录等</li>
+      <li><strong>卸载清除：</strong>卸载应用将自动清除所有本地数据</li>
+      <li><strong>源插件数据：</strong>可在书架管理中删除源插件及其关联数据</li>
+    </ul>
+  </div>
+
+  <div class="section" id="changes">
+    <h2>9. 政策变更</h2>
+    <p>本应用开发团队保留随时修改本隐私政策的权利。政策变更后，将在本页面更新并注明新的生效日期。</p>
+    <p>由于本应用不收集用户信息且不提供推送通知，用户应<strong>定期查看本页面</strong>以了解最新政策内容。继续使用本应用即视为接受修改后的隐私政策。</p>
+  </div>
+
+  <div class="section" id="contact">
+    <h2>10. 联系我们</h2>
+    <p>如果您对本隐私政策有任何疑问或建议，可通过以下方式联系我们：</p>
+    <ul>
+      <li>GitHub Issues：<a href="https://github.com/NagasakiAno/VENERA_NEXT/issues" style="color:#145CDE;">https://github.com/NagasakiAno/VENERA_NEXT/issues</a></li>
+      <li>项目仓库：<a href="https://github.com/NagasakiAno/VENERA_NEXT" style="color:#145CDE;">https://github.com/NagasakiAno/VENERA_NEXT</a></li>
+    </ul>
+  </div>
+
+  <div class="footer">
+    <p>© 2026 VeneraNext · 开源项目 · <a href="https://github.com/NagasakiAno/VENERA_NEXT">GitHub</a></p>
+    <p>本隐私政策托管于 GitHub Pages</p>
+  </div>
+
+</div>
+</body>
+</html>
