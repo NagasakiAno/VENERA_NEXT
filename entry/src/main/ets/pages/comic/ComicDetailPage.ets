@@ -215,7 +215,7 @@ struct DownloadRangeDialog {
           .fontSize(FS_SMALL).fontColor('#FF7FB0FF')
           .onClick(() => { this.toggleAll(); })
       }
-      .width('100%').padding({ left: SPACE_3, right: SPACE_3, top: 4, bottom: 6 })
+      .width('100%').padding({ left: 20, right: 20, top: 4, bottom: 8 })
 
       List() {
         ForEach(this.titles, (title: string, idx: number) => {
@@ -224,7 +224,7 @@ struct DownloadRangeDialog {
           }
         }, (title: string, idx: number) => 'dl#' + idx)
       }
-      .width('100%').layoutWeight(1).padding({ left: SPACE_3, right: SPACE_3 })
+      .width('100%').layoutWeight(1).padding({ left: 20, right: 20 })
       .scrollBar(BarState.Off)
       .divider({ strokeWidth: 0.5, color: '#1AFFFFFF' })
 
@@ -245,9 +245,9 @@ struct DownloadRangeDialog {
             this.onConfirm(out);
           })
       }
-      .width('100%').padding({ left: SPACE_3, right: SPACE_3, top: 10, bottom: 16 })
+      .width('100%').padding({ left: 20, right: 20, top: 12, bottom: 28 })
     }
-    .width('100%').height(560)
+    .width('100%').height(572)
     .borderRadius(24)
   }
 }
