@@ -1,5 +1,5 @@
 /**
- * VeneraNext JS 运行时 (B 阶段)
+ * MangaBridges JS 运行时 (B 阶段)
  *
  * 职责:
  *   1. 加载 rawfile/init.js 并交给 native JSVM 执行, 得到运行时库(Convert/Network/Html/ComicSource...)

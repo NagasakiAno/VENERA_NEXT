@@ -1,5 +1,5 @@
 /**
- * VeneraNext 结果封装(对应 Flutter 版 foundation/res.dart)
+ * MangaBridges 结果封装(对应 Flutter 版 foundation/res.dart)
  * 用于承载操作的成败与数据
  */
 export class comic_Res<T> {

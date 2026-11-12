@@ -1,5 +1,5 @@
 /**
- * VeneraNext Cookie 持久化
+ * MangaBridges Cookie 持久化
  * 对应原版 network/cookie_jar.dart (SQLite cookie.db), 这里用 filesDir/cookies.json
  *
  * 职责: 请求前注入 Cookie 头、响应后写入 Set-Cookie、供 JS 源脚本通过 cookie 桥读写

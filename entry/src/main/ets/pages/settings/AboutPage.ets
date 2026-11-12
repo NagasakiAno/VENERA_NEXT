@@ -1,5 +1,5 @@
 /**
- * VeneraNext 关于应用页面
+ * MangaBridges 关于应用页面
  * 展示应用图标、版本号、免责声明、源项目引用、开源协议、GitHub 地址
  */
 import { router } from '@kit.ArkUI';
@@ -48,7 +48,7 @@ export struct AboutPage {
           Column({ space: 8 }) {
             Image($r('app.media.app_logo'))
               .width(80).height(80).borderRadius(20)
-            Text('VeneraNext').fontSize(20).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
+            Text('MangaBridges').fontSize(20).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
             Text('v' + this.appVersion).fontSize(FS_SMALL).fontColor(PRIMARY)
           }
           .width('100%').justifyContent(FlexAlign.Center)

@@ -1,5 +1,5 @@
 /**
- * VeneraNext 源详情页 (SourceDetailPage)
+ * MangaBridges 源详情页 (SourceDetailPage)
  * 对应原版 comic_source_page.dart 中的源详情面板
  * 功能: 渲染源声明的 settings(select/switch/input/callback) + 账号(账密/Cookies/登出)
  */

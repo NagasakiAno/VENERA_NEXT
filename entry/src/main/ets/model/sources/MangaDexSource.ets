@@ -1,5 +1,5 @@
 /**
- * VeneraNext MangaDex 真实源(公开 API, 无签名/无区域限制)
+ * MangaBridges MangaDex 真实源(公开 API, 无签名/无区域限制)
  * 对应 venera-configs/manga_dex.js, 用 ArkTS 原生实现
  * API: https://api.mangadex.org (MangaDex 官方公开 REST API)
  */

@@ -1,5 +1,5 @@
 /**
- * VeneraNext 漫画源抽象协议与源容器
+ * MangaBridges 漫画源抽象协议与源容器
  * 对应 Flutter 版 foundation/comic_source/comic_source.dart 的契约
  * 策略: 核心采用「JS 源脚本」架构(兼容官方仓库第三方 .js), 由 ComicSourceManager 管理;
  *       旧的原生 ArkTS 源(ComicSourceProtocol)保留为兼容层, 与 JS 源池共存。

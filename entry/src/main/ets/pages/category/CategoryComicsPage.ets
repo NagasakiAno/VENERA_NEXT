@@ -1,5 +1,5 @@
 /**
- * VeneraNext 分类结果页
+ * MangaBridges 分类结果页
  *
  * 对应原版 category_comics_page.dart: 顶部选项 chips + 结果网格 + 分页加载。
  */

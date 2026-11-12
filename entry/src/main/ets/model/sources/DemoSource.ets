@@ -1,5 +1,5 @@
 /**
- * VeneraNext 内置示例漫画源(DemoSource)
+ * MangaBridges 内置示例漫画源(DemoSource)
  * 演示如何用 ArkTS + HttpClient 实现网络漫画源。
  * 使用说明: 该源对接一个公开的 JSON API 以便上手验证网络链路。
  * 实际漫画源(如鸡盒子/禁漫等)需按其站点 HTML/接口结构调整, 见 ComicSourceProtocol 契约。
@@ -84,7 +84,7 @@ export class DemoSource implements ComicSourceProtocol {
     const detailsInput: Record<string, Object> = {
       'title': comic.title,
       'cover': comic.cover,
-      'description': `《${comic.title}》是一款由 VeneraNext 示例源提供的演示漫画。`,
+      'description': `《${comic.title}》是一款由 MangaBridges 示例源提供的演示漫画。`,
       'tags': tags,
       'chapters': chapters,
       'comicId': comic.id

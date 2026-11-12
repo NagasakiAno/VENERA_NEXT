@@ -1,5 +1,5 @@
 /**
- * VeneraNext 分类页
+ * MangaBridges 分类页
  *
  * 汇总各源 category 声明的分类分组, 点分类项进入结果页。
  * 对应原版 categories_page.dart。

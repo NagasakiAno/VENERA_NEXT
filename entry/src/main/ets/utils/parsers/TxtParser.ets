@@ -1,5 +1,5 @@
 /**
- * VeneraNext TXT 解析器
+ * MangaBridges TXT 解析器
  * 读取本地 UTF-8 文本, 按固定字符数分页为阅读器 TEXT 页
  */
 import { fileIo as fs } from '@kit.CoreFileKit';

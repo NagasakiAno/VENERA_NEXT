@@ -1,5 +1,5 @@
 /**
- * VeneraNext 阅读器设置模型
+ * MangaBridges 阅读器设置模型
  * 基于 AppSettings 持久化, 保存当前阅读偏好
  */
 import { appSettings } from '../model/AppSettings';

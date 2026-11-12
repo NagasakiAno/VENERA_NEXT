@@ -1,5 +1,5 @@
 /**
- * VeneraNext 免责声明浏览页
+ * MangaBridges 免责声明浏览页
  * 从设置 > 应用详情 进入，可滚动阅读完整免责声明
  */
 import { router } from '@kit.ArkUI';

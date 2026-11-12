@@ -1,5 +1,5 @@
 /*
- * VeneraNext JSVM 运行时实现
+ * MangaBridges JSVM 运行时实现
  *
  * 数据流:
  *   ArkTS ──Eval(src)──▶ C++ ──OH_JSVM_RunScript──▶ JS 源脚本

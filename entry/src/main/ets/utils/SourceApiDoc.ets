@@ -1,13 +1,13 @@
 /**
- * VeneraNext JS 漫画源搭建原理与接口文档
+ * MangaBridges JS 漫画源搭建原理与接口文档
  * 供漫画源管理界面展示与保存到本地
  */
 
-export const SOURCE_API_DOC: string = `# VeneraNext JS 漫画源搭建原理与接口文档
+export const SOURCE_API_DOC: string = `# MangaBridges JS 漫画源搭建原理与接口文档
 
 ## 一、架构概述
 
-VeneraNext 采用 JS 源插件系统作为漫画数据来源的核心架构。源以独立 .js 文件形式存在，通过继承 ComicSource 基类声明能力，由 ArkTS 侧的 JsRuntime 加载到 C++ JSVM 中执行，实现与宿主 App 的双向通信。
+MangaBridges 采用 JS 源插件系统作为漫画数据来源的核心架构。源以独立 .js 文件形式存在，通过继承 ComicSource 基类声明能力，由 ArkTS 侧的 JsRuntime 加载到 C++ JSVM 中执行，实现与宿主 App 的双向通信。
 
 ### 1.1 两阶段解析
 

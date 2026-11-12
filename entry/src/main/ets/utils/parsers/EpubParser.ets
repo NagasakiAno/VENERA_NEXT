@@ -1,5 +1,5 @@
 /**
- * VeneraNext EPUB 解析器(性能优化版)
+ * MangaBridges EPUB 解析器(性能优化版)
  * 1. zlib 解压 epub(zip) 到沙箱目录
  * 2. 解析 META-INF/container.xml -> OPF 路径
  * 3. 解析 OPF manifest/spine -> 章节顺序与 href

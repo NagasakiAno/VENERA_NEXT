@@ -1,5 +1,5 @@
 /**
- * VeneraNext JSVM 运行时 native 接口
+ * MangaBridges JSVM 运行时 native 接口
  */
 
 /**

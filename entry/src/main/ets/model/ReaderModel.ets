@@ -1,5 +1,5 @@
 /**
- * VeneraNext 阅读器页面模型
+ * MangaBridges 阅读器页面模型
  * 统一承载 文本页 / 图片页 两种内容, 兼容后续 PDF/EPUB/MOBI/WEB源 归一化
  */
 

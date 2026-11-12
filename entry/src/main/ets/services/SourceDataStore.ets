@@ -1,5 +1,5 @@
 /**
- * VeneraNext 源运行时数据存储
+ * MangaBridges 源运行时数据存储
  * 对应原版 {dataPath}/comic_source/{key}.data (JSON 对象), 供 JS 源脚本与 App UI 共用
  *
  * 结构约定(与原版一致):

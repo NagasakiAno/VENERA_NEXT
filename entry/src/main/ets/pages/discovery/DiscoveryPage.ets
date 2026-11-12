@@ -1,5 +1,5 @@
 /**
- * VeneraNext 发现页
+ * MangaBridges 发现页
  *
  * 对应原版 explore_page.dart: 多源 explore 页聚合为横向 Tab, 每个 Tab 按源声明的
  * 类型渲染(singlePageWithMultiPart / multiPageComicList / mixed),

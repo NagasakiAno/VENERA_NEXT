@@ -1,5 +1,5 @@
 /**
- * VeneraNext 导航路由原型
+ * MangaBridges 导航路由原型
  * 形态选择由 OH_DisplayManager(display 折叠状态) 驱动:
  *   - 竖屏(折叠态/手机): Navigation + TitleBarStyleOptions, 标题栏承载 TAB(书架/发现/设置)
  *   - 横屏(折叠展开/平板): 左侧圆角矩形底框 sidebar, 内含导航按钮
@@ -419,10 +419,10 @@ struct Index {
         .animation({ duration: 400, curve: Curve.EaseOut })
 
       // 品牌字
-      Text('VENERA')
+      Text('MANGABRIDGES')
         .fontSize(22).fontWeight(FontWeight.Bold)
         .fontColor(GRAY_900)
-        .letterSpacing(6)
+        .letterSpacing(3)
         .opacity(this.splashBrandOpacity)
         .translate({ y: this.splashBrandY })
         .animation({ duration: 350, curve: Curve.EaseOut })

@@ -1,5 +1,5 @@
 /**
- * VeneraNext 本地书架全局可变数据源(单例)
+ * MangaBridges 本地书架全局可变数据源(单例)
  * 承载运行时新增/恢复的导入书, 并通过订阅通知书架页响应式刷新
  */
 import { ShelfItem } from './ShelfItem';

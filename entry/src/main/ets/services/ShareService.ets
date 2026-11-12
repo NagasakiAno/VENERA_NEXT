@@ -1,5 +1,5 @@
 /**
- * VeneraNext 分享服务
+ * MangaBridges 分享服务
  *
  * 两条通道:
  * 1. 系统分享面板(Share Kit `systemShare`): 同设备分享给其它 App, 面板里的"华为分享"可跨设备发送
@@ -11,7 +11,7 @@
  *
  * 负载同时放在两个位置, 保证跨设备不同链路都能取到:
  * - SharedRecord.extraData['vnr']  (Share Kit 自定义扩展数据, 跨设备透传)
- * - SharedRecord.content 里的 URL:  https://veneranext.app/share?d=<base64(JSON)>
+ * - SharedRecord.content 里的 URL:  https://mangabridges.app/share?d=<base64(JSON)>
  *
  * 接收端: 从 Want 取 SharedData -> importSharedData(), 或从 Want.uri 解析 d= 参数。
  */
@@ -62,8 +62,8 @@ export type ReceivedShareData = WebShareData | LocalShareData;
 
 /** 纯文本分享前缀: 目标设备收到的是文本而不是链接, 避免系统用浏览器打开 */
 /** 自定义 URL scheme: 华为分享按链接投递, 对端由本应用处理链接完成导入 */
-const SHARE_SCHEME_PREFIX = 'veneranext://share?d=';
-const SHARE_TEXT_PREFIX = 'VeneraNextShare:';
+const SHARE_SCHEME_PREFIX = 'mangabridges://share?d=';
+const SHARE_TEXT_PREFIX = 'MangaBridgesShare:';
 /** extraData 中负载字段名 */
 const EXTRA_KEY = 'vnr';
 
@@ -141,7 +141,7 @@ class ShareService {
       if (ctx === null) {
         return '';
       }
-      const file = ctx.cacheDir + '/VeneraNext_share_' + Date.now() + '.txt';
+      const file = ctx.cacheDir + '/MangaBridges_share_' + Date.now() + '.txt';
       const f = fs.openSync(file, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
       fs.writeSync(f.fd, text);
       fs.closeSync(f);
@@ -160,7 +160,7 @@ class ShareService {
   /**
    * 构造 Share Kit 共享数据(自定义 scheme 超链接 + extraData 双通道)
    * 关键点: 华为分享面板会把文件/文本落地成本地文件, 但会把 HYPERLINK 当作链接投递;
-   * 用 veneranext:// 自定义 scheme, 目标设备解析链接时由本应用接管, 从而拉起应用并自动导入。
+   * 用 mangabridges:// 自定义 scheme, 目标设备解析链接时由本应用接管, 从而拉起应用并自动导入。
    */
   buildSharedData(data: ReceivedShareData): systemShare.SharedData {
     const payloadJson = JSON.stringify(data);
@@ -168,7 +168,7 @@ class ShareService {
     const extra: Record<string, string | number | boolean | Array<string | number | boolean>> = {};
     extra[EXTRA_KEY] = payloadJson;
     extra['vnr_v'] = '3';
-    const description = data.description.length > 0 ? data.description : 'VeneraNext 漫画分享';
+    const description = data.description.length > 0 ? data.description : 'MangaBridges 漫画分享';
     const record: systemShare.SharedRecord = {
       utd: utd.UniformDataType.HYPERLINK,
       content: link,
@@ -320,7 +320,7 @@ class ShareService {
   handleReceivedData(content: string): boolean {
     try {
       let text = content.trim();
-      // 纯文本分享: VeneraNextShare:<base64(JSON)>
+      // 纯文本分享: MangaBridgesShare:<base64(JSON)>
       if (text.indexOf(SHARE_TEXT_PREFIX) === 0) {
         text = this.fromBase64(text.substring(SHARE_TEXT_PREFIX.length));
       }

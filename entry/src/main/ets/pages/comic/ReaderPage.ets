@@ -1,5 +1,5 @@
 /**
- * VeneraNext 阅读器
+ * MangaBridges 阅读器
  * 兼容本地/Web 归一化页面(文本页/图片页), PDF/EPUB/MOBI 解析后续接入
  * 设计要点:
  *  - 滚动 / 翻页(Swiper) 双模式

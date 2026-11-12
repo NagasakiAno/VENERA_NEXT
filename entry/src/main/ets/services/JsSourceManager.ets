@@ -1,5 +1,5 @@
 /**
- * VeneraNext JS 源管理器服务
+ * MangaBridges JS 源管理器服务
  * 负责磁盘<->ComicSourceManager 的完整生命周期: 扫描/安装/更新/删除 + 四列表联动
  * (explore_pages/categories/favorites/searchSources 存储于 AppSettings)
  */

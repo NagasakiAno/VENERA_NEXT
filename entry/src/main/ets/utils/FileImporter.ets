@@ -1,5 +1,5 @@
 /**
- * VeneraNext 本地文件导入核心
+ * MangaBridges 本地文件导入核心
  * - picker.DocumentViewPicker 选择文件(临时读写权限, 免持久化授权)
  * - 拷贝到应用沙箱 filesDir/books/ 持久保留
  * - 按后缀分发 TXT/EPUB 解析, 组装 ShelfItem 加入 LocalBookStore + 元信息落盘

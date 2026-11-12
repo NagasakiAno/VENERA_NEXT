@@ -1,5 +1,5 @@
 /**
- * VeneraNext 漫画源管理页 (ComicSourcePage)
+ * MangaBridges 漫画源管理页 (ComicSourcePage)
  * 对应原版 lib/pages/comic_source_page.dart
  * 功能: URL安装 / 本地文件安装 / 源列表(版本/更新/删除) / 仓库列表 / 检查更新
  */

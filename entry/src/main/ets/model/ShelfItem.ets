@@ -1,5 +1,5 @@
 /**
- * VeneraNext 书架条目统一模型
+ * MangaBridges 书架条目统一模型
  * 同时承载 本地导入 与 WEB源(demo) 两种来源, 覆盖书架/详情页所需字段
  */
 import { ReaderChapter } from './ReaderModel';

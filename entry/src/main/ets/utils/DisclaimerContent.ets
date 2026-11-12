@@ -1,12 +1,12 @@
 /**
- * VeneraNext 免责声明文本
+ * MangaBridges 免责声明文本
  * 供设置页弹窗与免责声明浏览页共用
  */
 
 export const DISCLAIMER_TITLE: string = '免责声明';
 
 export const DISCLAIMER_TEXT: string = `
-VeneraNext 漫画源插件免责声明
+MangaBridges 漫画源插件免责声明
 
 1. 软件性质
 本应用是一款开源漫画阅读器软件。本应用本身不提供、不存储、不传播任何漫画内容，所有漫画内容均来源于用户自行安装的第三方漫画源插件。

@@ -1,5 +1,5 @@
 /**
- * VeneraNext 网络收藏同步服务
+ * MangaBridges 网络收藏同步服务
  *
  * 对应原版 network_favorites_page.dart + favorite_actions.dart 的 importNetworkFolder:
  *   1. 浏览网络源账户收藏(收藏夹列表/收藏列表, loadComics 分页 或 loadNext 游标)

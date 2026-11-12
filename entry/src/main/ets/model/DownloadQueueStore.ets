@@ -1,5 +1,5 @@
 /**
- * VeneraNext 下载队列管理器
+ * MangaBridges 下载队列管理器
  * - 支持多任务排队下载（并发控制：同时最多1个任务）
  * - 任务状态机：pending → downloading → completed/failed/paused
  * - 进度追踪：downloadedImages/totalImages/progress

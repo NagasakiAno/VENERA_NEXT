@@ -1,5 +1,5 @@
 /**
- * VeneraNext 拷贝漫画(CopyManga) 真实源
+ * MangaBridges 拷贝漫画(CopyManga) 真实源
  * 对应 venera-configs/copy_manga.js, 用 ArkTS 原生实现
  * 核心: HMAC-SHA256 签名 headers, JSON API, 分组章节, 图片按 words 重排
  */

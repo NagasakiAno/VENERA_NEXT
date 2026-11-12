@@ -1,5 +1,5 @@
 /**
- * VeneraNext 加解密/编码工具层
+ * MangaBridges 加解密/编码工具层
  * 对应 Flutter 版 assets/init.js 中的 Convert 对象(JS 运行时供给漫画源使用)
  * 基于官方 CryptoArchitectureKit 与 util 实现, 全部 ArkTS 原生
  */

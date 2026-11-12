@@ -1,4 +1,4 @@
-# VeneraNext
+# MangaBridges
 
 一款基于 **HarmonyOS** 的开源漫画阅读器，采用 **JS 源插件系统** 作为漫画数据来源。本应用本身不提供、不存储、不传播任何漫画内容，所有内容均来源于用户自行安装的第三方漫画源插件。
 
@@ -42,7 +42,7 @@ $env:DEVECO_SDK_HOME="<DevEco Studio 安装路径>\sdk"
 | 文件 | 路径 | 用途 |
 |------|------|------|
 | HAP | `entry/build/default/outputs/default/entry-default-unsigned.hap` | 手动签名后真机安装 |
-| APP | `build/outputs/default/VeneraNextNew-default-unsigned.app` | 提交华为应用市场审核 |
+| APP | `build/outputs/default/MangaBridges-default-unsigned.app` | 提交华为应用市场审核 |
 
 ## 🔌 漫画源插件
 

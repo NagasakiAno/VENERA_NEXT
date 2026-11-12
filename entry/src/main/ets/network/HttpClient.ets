@@ -1,5 +1,5 @@
 /**
- * VeneraNext 网络层封装
+ * MangaBridges 网络层封装
  * 对应 Flutter 版 network/app_dio.dart, 基于官方 @ohos.net.http 实现
  */
 import { http } from '@kit.NetworkKit';

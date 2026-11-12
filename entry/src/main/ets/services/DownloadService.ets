@@ -1,5 +1,5 @@
 /**
- * VeneraNext 下载执行服务
+ * MangaBridges 下载执行服务
  * - 调用 ComicReadService.loadImages() 获取章节图片 URL 列表
  * - 逐张下载原始字节并写入 DiskCacheManager
  * - 队列调度：当前任务完成后自动启动下一个 pending 任务

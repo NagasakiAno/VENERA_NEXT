@@ -1,5 +1,5 @@
 /**
- * VeneraNext 配置导入导出工具
+ * MangaBridges 配置导入导出工具
  * - 导出: AppSettings + JS源文件内容 + 源数据(登录态/cookies) + 收藏列表 → JSON 文件
  * - 导入: 从 JSON 文件恢复全部配置(写回.js和.data文件, 重新扫描注册)
  * - 使用 picker.DocumentViewPicker 选择保存/读取位置(临时权限)

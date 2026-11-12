@@ -1,5 +1,5 @@
 /**
- * VeneraNext JS 漫画源静态元信息
+ * MangaBridges JS 漫画源静态元信息
  * A 阶段(正则解析)与 B 阶段(JSVM 真引擎)产出同构, 供 UI/存储层复用
  */
 

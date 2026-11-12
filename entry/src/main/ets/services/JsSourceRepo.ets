@@ -1,5 +1,5 @@
 /**
- * VeneraNext JS 漫画源仓库服务
+ * MangaBridges JS 漫画源仓库服务
  * 拉取官方 index.json、检查更新; 对应原版 index.json 仓库逻辑
  */
 import { HttpClient, HttpResponseData, HttpMethod, ResponseType } from '../network/HttpClient';

@@ -1,5 +1,5 @@
 /**
- * VeneraNext 应用设置数据管理
+ * MangaBridges 应用设置数据管理
  * 基于 ArkTS Preferences 持久化 + 内存状态, 用于全局共享
  */
 import { preferences } from '@kit.ArkData';

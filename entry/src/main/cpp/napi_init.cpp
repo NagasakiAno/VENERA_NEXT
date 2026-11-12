@@ -1,5 +1,5 @@
 /*
- * VeneraNext Native 模块入口 (libentry.so)
+ * MangaBridges Native 模块入口 (libentry.so)
  *
  * 对 ArkTS 暴露的接口见 types/libentry/index.d.ts
  */

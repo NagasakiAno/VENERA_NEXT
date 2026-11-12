@@ -1,5 +1,5 @@
 /**
- * VeneraNext ArkUI 设计令牌 —— 严格对齐 harmonyos-comic-reader/pages 原型
+ * MangaBridges ArkUI 设计令牌 —— 严格对齐 harmonyos-comic-reader/pages 原型
  * 颜色一律使用 #ARGB 面值(避免 sys.color 编译解析问题)
  */
 

@@ -1,5 +1,5 @@
 /**
- * VeneraNext 设置页
+ * MangaBridges 设置页
  * 提供 漫画源管理、缓存管理、配置导入导出 等入口
  */
 import { router, promptAction } from '@kit.ArkUI';

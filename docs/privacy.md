@@ -1,4 +1,4 @@
-# VeneraNext 隐私政策
+# MangaBridges 隐私政策
 
 **最后更新：2026年10月13日**  
 **版本：1.0.6**  
@@ -23,7 +23,7 @@
 
 ## 1. 引言
 
-VeneraNext（以下简称"本应用"）是一款基于 HarmonyOS 的开源漫画阅读器，采用 JS 源插件系统作为漫画数据来源。本应用本身**不提供、不存储、不传播**任何漫画内容。
+MangaBridges（以下简称"本应用"）是一款基于 HarmonyOS 的开源漫画阅读器，采用 JS 源插件系统作为漫画数据来源。本应用本身**不提供、不存储、不传播**任何漫画内容。
 
 我们高度重视您的隐私。本隐私政策旨在说明本应用如何处理与您相关的信息。请仔细阅读本政策，了解我们对您信息的处理方式。
 
@@ -158,6 +158,6 @@ VeneraNext（以下简称"本应用"）是一款基于 HarmonyOS 的开源漫画
 
 ---
 
-© 2026 VeneraNext · 开源项目 · [GitHub](https://github.com/NagasakiAno/VENERA_NEXT)
+© 2026 MangaBridges · 开源项目 · [GitHub](https://github.com/NagasakiAno/VENERA_NEXT)
 
 本隐私政策托管于 GitHub Pages。

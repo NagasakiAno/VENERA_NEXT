@@ -1,5 +1,5 @@
 /*
- * VeneraNext JSVM 运行时 (B 阶段: 真 JS 引擎 + sendMessage 桥)
+ * MangaBridges JSVM 运行时 (B 阶段: 真 JS 引擎 + sendMessage 桥)
  *
  * 用鸿蒙官方 JSVM-API 创建独立 JS 运行时执行漫画源脚本, 并与 ArkTS 侧通过
  * Node-API 双向通信: JS 的 sendMessage() 转发给 ArkTS 处理器, 异步结果再

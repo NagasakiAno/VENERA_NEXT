@@ -1,5 +1,5 @@
 /**
- * VeneraNext JS 源文件存储
+ * MangaBridges JS 源文件存储
  * comic_source/*.js 源脚本 + {key}.data 源数据, 位于 filesDir
  */
 import { fileIo as fs } from '@kit.CoreFileKit';

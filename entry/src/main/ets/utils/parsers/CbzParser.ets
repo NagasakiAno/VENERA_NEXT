@@ -1,5 +1,5 @@
 /**
- * VeneraNext CBZ/ZIP 漫画解析器
+ * MangaBridges CBZ/ZIP 漫画解析器
  * CBZ = Comic Book Zip = ZIP 文件包含图片(jpg/png/webp/gif/bmp)
  * 1. zlib 解压 cbz(zip) 到沙箱目录
  * 2. 递归扫描解压目录中的图片文件

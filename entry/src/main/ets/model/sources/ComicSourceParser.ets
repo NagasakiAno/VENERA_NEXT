@@ -1,5 +1,5 @@
 /**
- * VeneraNext JS 漫画源解析器 (A 阶段: 正则静态解析)
+ * MangaBridges JS 漫画源解析器 (A 阶段: 正则静态解析)
  * 对应原版 lib/foundation/comic_source/parser.dart
  * 签名与 B 阶段(JSVM 真引擎)对齐, 后续换引擎不改调用方
  */

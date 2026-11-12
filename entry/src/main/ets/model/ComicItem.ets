@@ -1,5 +1,5 @@
 /**
- * VeneraNext 漫画条目数据模型
+ * MangaBridges 漫画条目数据模型
  * 对应 Flutter 版 foundation/comic_source/models.dart 中的基础字段
  */
 

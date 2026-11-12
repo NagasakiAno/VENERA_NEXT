@@ -1,5 +1,5 @@
 /**
- * VeneraNext 轻量 HTML DOM
+ * MangaBridges 轻量 HTML DOM
  *
  * 为 JS 源的 HtmlDocument / HtmlElement / HtmlNode 提供:
  *   1. HTML 解析(标签/属性/文本/注释, script|style 原文保留)
