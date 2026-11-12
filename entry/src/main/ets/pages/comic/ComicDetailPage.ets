@@ -245,9 +245,9 @@ struct DownloadRangeDialog {
             this.onConfirm(out);
           })
       }
-      .width('100%').padding({ left: 20, right: 20, top: 12, bottom: 28 })
+      .width('100%').padding({ left: 20, right: 20, top: 12, bottom: 20 })
     }
-    .width('100%').height(572)
+    .width('100%').height(560)
     .borderRadius(24)
   }
 }
@@ -863,6 +863,8 @@ export struct ComicDetailPage {
       }),
       autoCancel: true,
       alignment: DialogAlignment.Bottom,
+      // 整张卡片上移, 避免贴住屏幕底边/手势条
+      offset: { dx: 0, dy: -20 },
       backgroundColor: '#001A1A1E',
       systemMaterial: DOWNLOAD_DIALOG_MATERIAL
     });
