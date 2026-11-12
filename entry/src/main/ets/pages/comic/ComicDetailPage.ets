@@ -4,7 +4,7 @@
  * 数据入口: 源脚本的 comic.loadInfo(id) -> ComicDetails, 对应原版 ComicPage。
  * 当前服务于搜索框的「按 ID 直达」; 章节阅读(comic.loadEp + 图片管道)属后续阶段。
  */
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, uiMaterial } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { image } from '@kit.ImageKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
@@ -32,6 +32,14 @@ import { PRIMARY, PRIMARY_50, SUCCESS, GRAY_100, GRAY_500, GRAY_900, CARD, BG, M
 
 const DOMAIN = 0x0000;
 const TAG = 'ComicDetailPage';
+
+// 下载章节弹层: 与阅读设置/排序弹层一致的鸿蒙原生沉浸光感材质
+const DOWNLOAD_DIALOG_MATERIAL = new uiMaterial.ImmersiveMaterial({
+  style: uiMaterial.ImmersiveStyle.ULTRA_THIN,
+  interactive: true,
+  lightEffect: { color: undefined }
+});
+
 /** 标签最多展示条数(部分源的标签极多) */
 const MAX_TAGS = 30;
 
@@ -165,36 +173,49 @@ struct DownloadRangeDialog {
     return n;
   }
 
+  /** 顶部拖拽条(与系统半模态一致) */
+  @Builder
+  dragPill() {
+    Row() {
+      Column().width(36).height(4).borderRadius(2).backgroundColor('#4DFFFFFF')
+    }.width('100%').height(20).justifyContent(FlexAlign.Center)
+  }
+
   @Builder
   chapterRow(title: string, idx: number) {
-    Row({ space: 10 }) {
+    Row({ space: 12 }) {
       Stack() {
         if (this.selected[idx]) {
-          SymbolGlyph($r('sys.symbol.checkmark')).fontSize(12).fontColor([CARD])
+          SymbolGlyph($r('sys.symbol.checkmark')).fontSize(13).fontColor([CARD])
         }
       }
-      .width(20).height(20).borderRadius(10)
-      .backgroundColor(this.selected[idx] ? PRIMARY : GRAY_100)
+      .width(22).height(22).borderRadius(11)
+      .backgroundColor(this.selected[idx] ? PRIMARY : '#33FFFFFF')
 
-      Text(title).fontSize(FS_SMALL).fontColor(GRAY_900)
+      Text(title).fontSize(FS_BODY).fontColor('#FFFFFFFF')
         .layoutWeight(1).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
       if (this.downloaded.length > idx && this.downloaded[idx]) {
-        Text('已下载').fontSize(10).fontColor(MUTED_FG)
+        Text('已下载').fontSize(10).fontColor('#B3FFFFFF')
+          .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+          .backgroundColor('#26FFFFFF').borderRadius(8)
       }
     }
-    .width('100%').height(42)
+    .width('100%').height(46)
     .onClick(() => { this.toggle(idx); })
   }
 
   build() {
     Column() {
+      this.dragPill()
+
       Row() {
-        Text('选择下载章节').fontSize(16).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
+        Text('选择下载章节').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#FFFFFFFF')
         Blank()
-        Text(this.allSelected ? '取消全选' : '全选').fontSize(FS_SMALL).fontColor(PRIMARY)
+        Text(this.allSelected ? '取消全选' : '全选')
+          .fontSize(FS_SMALL).fontColor('#FF7FB0FF')
           .onClick(() => { this.toggleAll(); })
       }
-      .width('100%').padding({ left: SPACE_3, right: SPACE_3, top: SPACE_3, bottom: SPACE_2 })
+      .width('100%').padding({ left: SPACE_3, right: SPACE_3, top: 4, bottom: 6 })
 
       List() {
         ForEach(this.titles, (title: string, idx: number) => {
@@ -205,14 +226,15 @@ struct DownloadRangeDialog {
       }
       .width('100%').layoutWeight(1).padding({ left: SPACE_3, right: SPACE_3 })
       .scrollBar(BarState.Off)
+      .divider({ strokeWidth: 0.5, color: '#1AFFFFFF' })
 
-      Row({ space: SPACE_2 }) {
-        Text('取消').fontSize(FS_BODY).fontColor(GRAY_900)
-          .height(44).layoutWeight(1).textAlign(TextAlign.Center).borderRadius(RADIUS_MD)
-          .backgroundColor(GRAY_100)
+      Row({ space: 10 }) {
+        Text('取消').fontSize(FS_BODY).fontColor('#FFFFFFFF')
+          .height(46).layoutWeight(1).textAlign(TextAlign.Center).borderRadius(23)
+          .backgroundColor('#26FFFFFF')
           .onClick(() => { this.controller?.close(); })
         Text('下载所选 (' + this.selectedCount() + ')').fontSize(FS_BODY).fontColor(CARD)
-          .height(44).layoutWeight(2).textAlign(TextAlign.Center).borderRadius(RADIUS_MD)
+          .height(46).layoutWeight(2).textAlign(TextAlign.Center).borderRadius(23)
           .backgroundColor(PRIMARY)
           .onClick(() => {
             const out: number[] = [];
@@ -223,9 +245,10 @@ struct DownloadRangeDialog {
             this.onConfirm(out);
           })
       }
-      .width('100%').padding(SPACE_3)
+      .width('100%').padding({ left: SPACE_3, right: SPACE_3, top: 10, bottom: 16 })
     }
-    .width('100%').height(520).backgroundColor(CARD).borderRadius(RADIUS_LG)
+    .width('100%').height(560)
+    .borderRadius(24)
   }
 }
 
@@ -832,9 +855,9 @@ export struct ComicDetailPage {
         onConfirm: (indices: number[]) => { this.enqueueDownloadIndices(indices); }
       }),
       autoCancel: true,
-      alignment: DialogAlignment.Center,
-      backgroundColor: Color.Transparent,
-      customStyle: true
+      alignment: DialogAlignment.Bottom,
+      backgroundColor: '#001A1A1E',
+      systemMaterial: DOWNLOAD_DIALOG_MATERIAL
     });
     this.downloadCtrl.open();
   }
