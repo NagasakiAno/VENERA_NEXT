@@ -259,6 +259,8 @@ export struct ComicDetailPage {
   @Prop @Watch('onParamsChanged') sourceKey: string = '';
   sourceName: string = '';
   @Prop @Watch('onParamsChanged') comicId: string = '';
+  /** 首次打开阅读器时的回调: 宿主可借此关闭详情半模态弹层(避免挡住全屏阅读器) */
+  onReaderOpened: () => void = () => {};
 
   /** 外部换书(半模态复用同一实例): 参数变化时重新加载 */
   onParamsChanged(): void {
@@ -656,7 +658,12 @@ export struct ComicDetailPage {
       comicReadService.clearCache();
       this.progress = readHistoryService.find(this.sourceKey, this.currentId);
     };
+    // 首次打开阅读器: 记录并通知宿主关闭详情弹层(竖屏半模态不会自动收起, 会挡住全屏阅读器)
+    const wasVisible: boolean = AppStorage.get<boolean>('globalReaderVisible') ?? false;
     ReaderSession.publish(s);
+    if (!wasVisible) {
+      this.onReaderOpened();
+    }
   }
 
   // ---------------------------------------------------------------- UI

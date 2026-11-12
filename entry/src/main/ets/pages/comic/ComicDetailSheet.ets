@@ -43,7 +43,8 @@ export struct ComicDetailSheet {
         ComicDetailPage({
           sourceKey: this.sourceKey,
           sourceName: this.sourceName,
-          comicId: this.comicId
+          comicId: this.comicId,
+          onReaderOpened: (): void => { this.onClose(); }
         })
           .width('100%').layoutWeight(1)
       }
@@ -64,7 +65,8 @@ export struct ComicDetailSheet {
       ComicDetailPage({
         sourceKey: this.sourceKey,
         sourceName: this.sourceName,
-        comicId: this.comicId
+        comicId: this.comicId,
+        onReaderOpened: (): void => { this.onClose(); }
       })
         .width('100%').layoutWeight(1)
     }
