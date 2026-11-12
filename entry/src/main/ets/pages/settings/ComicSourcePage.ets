@@ -125,6 +125,8 @@ export struct ComicSourcePage {
   }
 
   private async fetchJs(url: string): Promise<string> {
+    // 粘贴地址时常带入首尾空格/换行, 鸿蒙 http 会直接报 2300003 URL 非法
+    url = url.trim();
     const resp: HttpResponseData = await HttpClient.getInstance().rawRequest({
       url: url,
       method: HttpMethod.GET,
@@ -141,6 +143,7 @@ export struct ComicSourcePage {
 
   /** 按 URL 安装 — 如果 URL 指向 index.json 仓库，自动打开源仓库弹层 */
   private async installByUrl(url: string): Promise<void> {
+    url = url.trim();
     if (url.length === 0 || this.ctx === null) {
       return;
     }
@@ -269,6 +272,7 @@ export struct ComicSourcePage {
 
   /** 拉起仓库弹层(立即打开, 列表区显示加载中) */
   private async openRepo(): Promise<void> {
+    this.listUrl = this.listUrl.trim();
     this.repoList = [];
     this.showRepo = true;
     this.startLoading('加载源仓库...');
@@ -337,7 +341,7 @@ export struct ComicSourcePage {
       .width('100%').height(44).padding({ left: SPACE_3, right: SPACE_3 })
 
       TextInput({ text: this.listUrl, placeholder: '仓库 URL' })
-        .onChange((v: string) => { this.listUrl = v; })
+        .onChange((v: string) => { this.listUrl = v.trim(); })
         .fontColor(GRAY_900)
         .placeholderColor(MUTED_FG)
         .backgroundColor(GRAY_100)
@@ -458,7 +462,7 @@ export struct ComicSourcePage {
         // 安装操作栏
         Column() {
           TextInput({ text: this.urlInput, placeholder: '输入 JS 脚本 URL 或源仓库地址' })
-            .onChange((v: string) => { this.urlInput = v; })
+            .onChange((v: string) => { this.urlInput = v.trim(); })
             .fontColor(GRAY_900)
             .placeholderColor(MUTED_FG)
             .backgroundColor(GRAY_100)

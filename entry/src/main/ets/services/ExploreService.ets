@@ -170,6 +170,10 @@ export class ExploreService {
         }
       }
     }
+    // fallback: 配置项全部失配(如旧版 bug 写入了源名称而非发现页标题)时, 返回全量
+    if (out.length === 0 && all.length > 0) {
+      return all;
+    }
     return out;
   }
 
@@ -187,6 +191,33 @@ export class ExploreService {
       } catch (e) {
         hilog.warn(DOMAIN, TAG, '解析源 %{public}s 的发现页失败: %{public}s', meta.key, `${e}`);
       }
+    }
+    // 清理被旧版 bug 污染的 explore_pages 配置:
+    // 旧版 addToLists() 写入了源名称(如 "JM")而非发现页标题(如 "最新"),
+    // 导致 pages() 过滤时失配, 发现页芯片消失。
+    // 此时 explorePages 已被 enrichExplore 填充, 可准确校验。
+    this.cleanupExplorePagesConfig();
+  }
+
+  /** 校验 explore_pages 配置项是否与实际发现页标题匹配, 清理失配项 */
+  private cleanupExplorePagesConfig(): void {
+    const configured = this.configuredTitles();
+    if (configured.length === 0) {
+      return;
+    }
+    const actualTitles: Set<string> = new Set<string>();
+    const metas = comicSourceManager.allJsSources();
+    for (let i = 0; i < metas.length; i++) {
+      const pages = metas[i].explorePages;
+      for (let j = 0; j < pages.length; j++) {
+        actualTitles.add(pages[j].title);
+      }
+    }
+    const valid = configured.filter((title: string) => actualTitles.has(title));
+    if (valid.length < configured.length) {
+      hilog.info(DOMAIN, TAG, '清理 explore_pages: %{public}d -> %{public}d',
+        configured.length, valid.length);
+      appSettings.put(KEY_EXPLORE_PAGES, JSON.stringify(valid));
     }
   }
 

@@ -59,6 +59,10 @@ export class CategoryService {
         }
       }
     }
+    // fallback: 配置项全部失配时, 返回全量
+    if (out.length === 0 && all.length > 0) {
+      return all;
+    }
     return out;
   }
 

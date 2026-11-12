@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:1920px; height:1080px; overflow:hidden;
+    font-family:"HarmonyOS Sans SC","Microsoft YaHei",sans-serif; }
+
+  /* === 舞台 === */
+  .stage { width:1920px; height:1080px; position:relative;
+    background:linear-gradient(160deg,#EBF2FF 0%,#F6F9FF 50%,#E4EEFF 100%);
+    display:flex; flex-direction:column; align-items:center; }
+  .deco { position:absolute; border-radius:50%; pointer-events:none; }
+  .d1 { width:560px; height:560px; top:-200px; left:-160px;
+    background:radial-gradient(circle,rgba(20,92,222,0.12),transparent 70%); }
+  .d2 { width:480px; height:480px; bottom:-180px; right:-120px;
+    background:radial-gradient(circle,rgba(20,92,222,0.10),transparent 70%); }
+  .dots { position:absolute; left:100px; bottom:100px; width:240px; height:160px;
+    background-image:radial-gradient(rgba(20,92,222,0.25) 2px,transparent 2px); background-size:28px 32px; }
+
+  /* === 顶部文案 === */
+  .head { text-align:center; margin-top:60px; z-index:5; }
+  .badge { display:inline-flex; align-items:center; gap:10px; background:#fff;
+    border:1px solid #D6E4FF; border-radius:999px; padding:9px 24px;
+    font-size:20px; letter-spacing:2px; color:#0A4FBF; margin-bottom:22px;
+    box-shadow:0 6px 20px rgba(20,92,222,0.08); }
+  h1 { font-size:62px; font-weight:800; color:#182431; letter-spacing:1px; }
+  h1 .hl { color:#145CDE; }
+  .sub { margin-top:14px; font-size:24px; color:#6B6E73; font-weight:300; }
+
+  /* === 设备区 === */
+  .devices { position:relative; z-index:4; flex:1; display:flex;
+    align-items:flex-end; justify-content:center; gap:80px; margin-top:20px; }
+
+  /* === 平板（横屏）=== */
+  .tablet-wrap { position:relative; }
+  .tablet { width:860px; height:540px; background:#0B0D12; border-radius:32px; padding:14px;
+    box-shadow:0 40px 90px rgba(24,36,49,0.25), 0 0 0 2px rgba(255,255,255,0.4) inset; }
+  .tscreen { width:100%; height:100%; border-radius:20px; overflow:hidden; background:#F1F3F5;
+    position:relative; display:flex; }
+  .tcam { position:absolute; top:50%; left:10px; transform:translateY(-50%);
+    width:6px; height:6px; border-radius:50%; background:#1E2430; z-index:20; }
+
+  /* 平板侧栏 */
+  .side { width:72px; height:88%; margin:16px 0 16px 16px; border-radius:24px;
+    background:rgba(255,255,255,0.7); backdrop-filter:blur(20px);
+    display:flex; flex-direction:column; align-items:center; padding-top:20px; flex-shrink:0; }
+  .side-logo { width:44px; height:44px; border-radius:22px;
+    background:linear-gradient(135deg,#145CDE,#4D8BFF);
+    display:flex; align-items:center; justify-content:center;
+    color:#fff; font-size:18px; font-weight:800; margin-bottom:16px; }
+  .side-items { position:relative; width:100%; }
+  .side-pill { position:absolute; left:8px; width:56px; height:64px; border-radius:16px;
+    background:#145CDE; box-shadow:0 2px 6px rgba(20,92,222,0.2); top:0; }
+  .side-item { width:100%; height:64px; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:4px; margin-bottom:8px;
+    position:relative; z-index:2; }
+  .side-item svg { width:22px; height:22px; }
+  .side-item .l { font-size:11px; }
+  .side-item.on svg path { fill:#fff; }
+  .side-item.on .l { color:#fff; font-weight:700; }
+  .side-item.off svg path { fill:#909399; }
+  .side-item.off .l { color:#909399; }
+
+  /* 平板主区 */
+  .tmain { flex:1; padding:20px 20px; overflow:hidden; }
+  .tbar { display:flex; align-items:center; justify-content:space-between; }
+  .ttitle { font-size:20px; font-weight:700; color:#182431; }
+  .ticons { display:flex; gap:8px; }
+  .ticon { width:40px; height:40px; border-radius:20px; display:flex; align-items:center;
+    justify-content:center; }
+  .ticon svg { width:18px; height:18px; }
+  .tchips { display:flex; gap:8px; margin-top:12px; }
+  .tchip { padding:6px 14px; border-radius:999px; font-size:13px; color:#182431; background:transparent; }
+  .tchip.on { color:#fff; background:#B3145CDE; font-weight:600; }
+  .tpart-title { display:flex; align-items:center; gap:6px; margin-top:14px; margin-bottom:8px; }
+  .tpart-title .bar { width:3px; height:14px; border-radius:2px; background:#145CDE; }
+  .tpart-title .t { font-size:17px; font-weight:700; color:#182431; }
+  .tgrid { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+  .tcell { }
+  .tcover { width:100%; aspect-ratio:0.72; border-radius:8px; overflow:hidden; position:relative; }
+  .tcover .ph { position:absolute; inset:0; }
+  .ttitle2 { font-size:12px; color:#182431; margin-top:4px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  /* === 手机（竖屏书架）=== */
+  .phone-wrap { position:relative; margin-bottom:30px; }
+  .phone { width:360px; height:760px; background:#0B0D12; border-radius:48px; padding:12px;
+    box-shadow:0 40px 90px rgba(24,36,49,0.28), 0 0 0 2px rgba(255,255,255,0.4) inset; position:relative; }
+  .screen { width:100%; height:100%; border-radius:38px; overflow:hidden; background:#F1F3F5; position:relative; }
+  .punch { position:absolute; top:12px; left:50%; transform:translateX(-50%); width:90px; height:24px;
+    background:#0B0D12; border-radius:999px; z-index:30; }
+
+  /* 书架页 UI */
+  .shelf-top { padding:44px 16px 0; }
+  .seg-bar { display:flex; gap:0; background:#fff; border-radius:999px; padding:3px; margin-bottom:12px; }
+  .seg-item { flex:1; text-align:center; padding:8px 0; border-radius:999px; font-size:14px; color:#909399; }
+  .seg-item.on { background:#145CDE; color:#fff; font-weight:600; }
+
+  .import-bar { display:flex; align-items:center; gap:10px; height:52px; padding:0 12px;
+    background:#fff; border-radius:12px; margin-bottom:8px; }
+  .import-mgr { display:flex; align-items:center; gap:4px; height:36px; padding:0 14px;
+    border-radius:18px; background:#F1F3F5; font-size:12px; color:#909399; }
+  .import-mgr svg { width:14px; height:14px; }
+  .import-hint { flex:1; font-size:12px; color:#909399; }
+  .import-btn { display:flex; align-items:center; gap:4px; height:36px; padding:0 16px;
+    border-radius:18px; background:#145CDE; font-size:12px; color:#fff; }
+  .import-btn svg { width:16px; height:16px; fill:#fff; }
+
+  .shelf-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; padding:0 16px; }
+  .shelf-cell { }
+  .shelf-cover { width:100%; aspect-ratio:0.75; border-radius:8px; overflow:hidden; position:relative; }
+  .shelf-cover .ph { position:absolute; inset:0; }
+  .shelf-badge-web { position:absolute; top:6px; left:6px; font-size:9px; color:#fff;
+    background:rgba(20,92,222,0.5); border-radius:4px; padding:1px 5px; }
+  .shelf-badge-prog { position:absolute; bottom:6px; left:6px; font-size:9px; color:#fff;
+    background:rgba(0,0,0,0.6); border-radius:4px; padding:1px 5px; }
+  .shelf-title { font-size:13px; color:#182431; margin-top:4px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  /* 底部 HdsTabs */
+  .tabbar { position:absolute; bottom:0; left:0; right:0; height:68px; z-index:25;
+    display:flex; justify-content:space-around; align-items:center; padding-bottom:10px;
+    background:linear-gradient(180deg,rgba(241,243,245,0.4),rgba(241,243,245,0.9)); }
+  .tab-item { display:flex; flex-direction:column; align-items:center; gap:2px; }
+  .tab-item svg { width:24px; height:24px; }
+  .tab-item .l { font-size:11px; }
+  .tab-item.on svg path { fill:#145CDE; }
+  .tab-item.on .l { color:#145CDE; font-weight:600; }
+  .tab-item.off svg path { fill:#909399; }
+  .tab-item.off .l { color:#909399; }
+
+  /* 封面纯色占位 */
+  .cv1 { background:linear-gradient(160deg,#FF6B9D,#C44569); }
+  .cv2 { background:linear-gradient(160deg,#4D8BFF,#0A4FBF); }
+  .cv3 { background:linear-gradient(160deg,#52C41A,#1F7A0A); }
+  .cv4 { background:linear-gradient(160deg,#FAAD14,#D6720A); }
+  .cv5 { background:linear-gradient(160deg,#9B6BFF,#5A2ED6); }
+  .cv6 { background:linear-gradient(160deg,#2CC4C4,#0A7A8C); }
+  .cv7 { background:linear-gradient(160deg,#FF8A5C,#D6452A); }
+  .cv8 { background:linear-gradient(160deg,#5C8AFF,#2A4ED6); }
+  .cv9 { background:linear-gradient(160deg,#E88AD8,#A62AB8); }
+  .cv10 { background:linear-gradient(160deg,#7AD8A8,#1F8A5A); }
+
+  /* 标题实心方框占位 */
+  .title-ph { display:block; height:12px; border-radius:3px; background:#C0C4CC; }
+  .title-ph.w75 { width:75%; }
+  .title-ph.w60 { width:60%; }
+  .title-ph.w50 { width:50%; }
+  .title-ph.w40 { width:40%; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="deco d1"></div><div class="deco d2"></div>
+  <div class="dots"></div>
+
+  <div class="head">
+    <div class="badge">✦ VENERA NEXT · 自适应布局</div>
+    <h1>手机竖屏 · 平板横屏 <span class="hl">一应俱全</span></h1>
+    <div class="sub">按设备形态自动切换布局 —— 竖屏单列沉浸，横屏多列高效浏览</div>
+  </div>
+
+  <div class="devices">
+    <!-- 平板横屏 -->
+    <div class="tablet-wrap">
+      <div class="tablet">
+        <div class="tscreen">
+          <div class="tcam"></div>
+          <!-- 侧栏 -->
+          <div class="side">
+            <div class="side-logo">V</div>
+            <div class="side-items">
+              <div class="side-pill"></div>
+              <div class="side-item on">
+                <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z" fill="#fff"/></svg>
+                <span class="l">书架</span>
+              </div>
+              <div class="side-item off">
+                <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill="#909399"/></svg>
+                <span class="l">发现</span>
+              </div>
+              <div class="side-item off">
+                <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" fill="#909399"/></svg>
+                <span class="l">设置</span>
+              </div>
+            </div>
+          </div>
+          <!-- 主区: 发现页横屏 -->
+          <div class="tmain">
+            <div class="tbar">
+              <span class="ttitle">发现</span>
+              <div class="ticons">
+                <div class="ticon"><svg viewBox="0 0 24 24" fill="#182431"><path d="M12 4V1L8 5l4 4V6c3.3 0 6 2.7 6 6s-2.7 6-6 6-6-2.7-6-6H4c0 4.4 3.6 8 8 8s8-3.6 8-8-3.6-8-8-8z"/></svg></div>
+                <div class="ticon"><svg viewBox="0 0 24 24" fill="#182431"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z"/></svg></div>
+                <div class="ticon"><svg viewBox="0 0 24 24" fill="#182431"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg></div>
+              </div>
+            </div>
+            <div class="tchips">
+              <div class="tchip on">最新</div><div class="tchip">推荐</div>
+            </div>
+            <div class="tpart-title"><div class="bar"></div><span class="t">最新上架</span></div>
+            <div class="tgrid">
+              <div class="tcell"><div class="tcover"><div class="ph cv1"></div></div><div class="ttitle2"><span class="title-ph w75"></span></div></div>
+              <div class="tcell"><div class="tcover"><div class="ph cv2"></div></div><div class="ttitle2"><span class="title-ph w75"></span></div></div>
+              <div class="tcell"><div class="tcover"><div class="ph cv3"></div></div><div class="ttitle2"><span class="title-ph w60"></span></div></div>
+              <div class="tcell"><div class="tcover"><div class="ph cv4"></div></div><div class="ttitle2"><span class="title-ph w75"></span></div></div>
+              <div class="tcell"><div class="tcover"><div class="ph cv5"></div></div><div class="ttitle2"><span class="title-ph w60"></span></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 手机竖屏: 书架页 -->
+    <div class="phone-wrap">
+      <div class="phone">
+        <div class="screen">
+          <div class="punch"></div>
+          <div class="shelf-top">
+            <div class="seg-bar">
+              <div class="seg-item on">本地</div>
+              <div class="seg-item">历史</div>
+              <div class="seg-item">下载</div>
+              <div class="seg-item">收藏</div>
+            </div>
+            <div class="import-bar">
+              <div class="import-mgr">
+                <svg viewBox="0 0 24 24" fill="#909399"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z"/></svg>
+                <span>管理</span>
+              </div>
+              <span class="import-hint">导入本地文件</span>
+              <div class="import-btn">
+                <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z" fill="#fff"/></svg>
+                <span>导入</span>
+              </div>
+            </div>
+          </div>
+          <!-- 封面网格 -->
+          <div class="shelf-grid">
+            <div class="shelf-cell">
+              <div class="shelf-cover">
+                <div class="ph cv1"></div>
+                <div class="shelf-badge-web">WEB</div>
+                <div class="shelf-badge-prog">读到42章</div>
+              </div>
+              <div class="shelf-title"><span class="title-ph w75"></span></div>
+            </div>
+            <div class="shelf-cell">
+              <div class="shelf-cover">
+                <div class="ph cv2"></div>
+                <div class="shelf-badge-web">WEB</div>
+              </div>
+              <div class="shelf-title"><span class="title-ph w75"></span></div>
+            </div>
+            <div class="shelf-cell">
+              <div class="shelf-cover">
+                <div class="ph cv3"></div>
+                <div class="shelf-badge-web">WEB</div>
+                <div class="shelf-badge-prog">读到12章</div>
+              </div>
+              <div class="shelf-title"><span class="title-ph w60"></span></div>
+            </div>
+            <div class="shelf-cell">
+              <div class="shelf-cover">
+                <div class="ph cv4"></div>
+                <div class="shelf-badge-web">WEB</div>
+              </div>
+              <div class="shelf-title"><span class="title-ph w75"></span></div>
+            </div>
+            <div class="shelf-cell">
+              <div class="shelf-cover">
+                <div class="ph cv5"></div>
+                <div class="shelf-badge-web">WEB</div>
+                <div class="shelf-badge-prog">读到8章</div>
+              </div>
+              <div class="shelf-title"><span class="title-ph w60"></span></div>
+            </div>
+            <div class="shelf-cell">
+              <div class="shelf-cover">
+                <div class="ph cv6"></div>
+                <div class="shelf-badge-web">WEB</div>
+              </div>
+              <div class="shelf-title"><span class="title-ph w75"></span></div>
+            </div>
+          </div>
+          <!-- 底部 HdsTabs -->
+          <div class="tabbar">
+            <div class="tab-item on">
+              <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z" fill="#145CDE"/></svg>
+              <span class="l">书架</span>
+            </div>
+            <div class="tab-item off">
+              <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill="#909399"/></svg>
+              <span class="l">发现</span>
+            </div>
+            <div class="tab-item off">
+              <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" fill="#909399"/></svg>
+              <span class="l">设置</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -163,16 +163,8 @@ export class JsSourceManager {
     hilog.info(DOMAIN, TAG, 'removed %{public}s', key);
   }
 
-  /** 安装时把源能提供的页追加进四列表 */
+  /** 安装时把源能提供的页追加进列表 */
   private addToLists(meta: ComicSourceMeta): void {
-    if (meta.hasExplore) {
-      const l = readList(KEY_EXPLORE);
-      const t = meta.name;
-      if (l.indexOf(t) < 0) {
-        l.push(t);
-        writeList(KEY_EXPLORE, l);
-      }
-    }
     if (meta.hasSearch) {
       const l = readList(KEY_SEARCH);
       if (l.indexOf(meta.key) < 0) {
@@ -180,15 +172,9 @@ export class JsSourceManager {
         writeList(KEY_SEARCH, l);
       }
     }
-    // categories/favorites 需源提供 category/favorites 能力, 本轮仅占位记录 key
-    if (meta.hasExplore) {
-      // category 依赖源内部, 本轮用 key 占位
-      const l = readList(KEY_CATEGORIES);
-      if (l.indexOf(meta.key) < 0 && hasCategory(meta)) {
-        l.push(meta.key);
-        writeList(KEY_CATEGORIES, l);
-      }
-    }
+    // explore_pages / categories 不在安装时写入:
+    // 这两个配置为空时默认显示全部, 写入后反而会触发过滤逻辑导致其他源消失。
+    // 用户可在设置页手动调整顺序/显隐, 删除源时 cleanupLists() 会清理失效项。
   }
 
   /** 删除时清理四列表中的失效项 */
@@ -202,12 +188,6 @@ export class JsSourceManager {
     const fav = readList(KEY_FAVORITES).filter((k) => k !== key);
     writeList(KEY_FAVORITES, fav);
   }
-}
-
-/** 是否提供分类能力(简单子串判断) */
-function hasCategory(meta: ComicSourceMeta): boolean {
-  // 占位: 元信息不含 category 掩码, 视为否(本轮分类 UI 未实现)
-  return false;
 }
 
 export const jsSourceManager = JsSourceManager.getInstance();

@@ -88,6 +88,7 @@ export class JsSourceRepo {
 
   /** 拉取 index.json 列表(禁缓存) */
   async fetchIndexList(listUrl: string): Promise<RepoSourceEntry[]> {
+    listUrl = listUrl.trim();
     try {
       const resp: HttpResponseData = await HttpClient.getInstance().rawRequest({
         url: listUrl,

@@ -16,13 +16,16 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window, display } from '@kit.ArkUI';
+import { systemShare, harmonyShare } from '@kit.ShareKit';
+import { fileIo as fs } from '@kit.CoreFileKit';
+import { uniformTypeDescriptor as utd } from '@kit.ArkData';
 import { restoreImported, restoreWebFavorites } from '../utils/FileImporter';
 import { jsSourceManager } from '../services/JsSourceManager';
 import { jsRuntime } from '../runtime/JsRuntime';
 import { diskCacheManager } from '../utils/DiskCacheManager';
 import { comicDetailCache } from '../services/ComicDetailCache';
 import { downloadQueueStore } from '../model/DownloadQueueStore';
-import { knockShareService } from '../services/KnockShareService';
+import { shareService } from '../services/ShareService';
 import { initBreakpoints, setFoldStatus, updateWindowSize } from '../utils/Breakpoints';
 import { appSettings } from '../model/AppSettings';
 import { downloadedChapterStore } from '../model/DownloadedChapterStore';
@@ -84,8 +87,8 @@ export default class EntryAbility extends UIAbility {
     downloadQueueStore.init(this.context);
     // 启动扫描已安装的 JS 漫画源
     jsSourceManager.scanFromFilesDir(this.context);
-    // 初始化碰一碰分享服务(注册接收监听)
-    knockShareService.init(this.context);
+    // 初始化分享服务
+    shareService.init(this.context);
     // 初始化响应式断点
     initBreakpoints();
     // 初始化 JS 运行时(加载 init.js + sendMessage 桥), 异步执行不阻塞启动
@@ -93,6 +96,134 @@ export default class EntryAbility extends UIAbility {
       hilog.error(DOMAIN, TAG, 'bootJsRuntime 异常: %{public}s', `${e}`);
     });
     hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onCreate');
+
+    // 处理分享数据(冷启动时系统通过 want 传入)
+    this.handleShareWant(want);
+  }
+
+  onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onNewWant');
+    // 处理分享数据(应用已运行时系统通过 onNewWant 传入)
+    this.handleShareWant(want);
+  }
+
+  /**
+   * 处理系统分享传入的 Want
+   * 从 want 中解析 SharedData, 提取 HYPERLINK 类型记录的 content(JSON),
+   * 调用 shareService.handleReceivedData() 导入收藏
+   */
+  private handleShareWant(want: Want): void {
+    try {
+      // 记录所有收到的 Want 关键信息, 便于排查跨设备分享链路
+      const paramKeys = want.parameters === undefined ? [] : Object.keys(want.parameters);
+      hilog.info(DOMAIN, TAG, '收到 Want: action=%{public}s uri=%{public}s type=%{public}s params=%{public}s',
+        want.action ?? '', want.uri ?? '', want.type ?? '', paramKeys.join(','));
+
+      // 1. 链接形式(华为分享把负载链接投递过来时)
+      const wantUri = want.uri ?? '';
+      if (wantUri.length > 0 && shareService.handleShareLink(wantUri)) {
+        hilog.info(DOMAIN, TAG, '分享链接导入成功');
+        return;
+      }
+
+      // 2. Share Kit 分享数据(同设备分享 / 跨设备投递)
+      if (want.action !== 'ohos.want.action.sendData') {
+        return;
+      }
+      systemShare.getSharedData(want).then((sharedData: systemShare.SharedData) => {
+        const ok = shareService.importSharedData(sharedData);
+        if (ok) {
+          hilog.info(DOMAIN, TAG, '分享数据导入成功');
+        } else {
+          hilog.warn(DOMAIN, TAG, '分享数据导入失败(记录中未找到有效负载)');
+        }
+      }).catch((e: Error) => {
+        hilog.error(DOMAIN, TAG, 'getSharedData 失败: %{public}s', `${e}`);
+      });
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'handleShareWant 异常: %{public}s', `${e}`);
+    }
+  }
+
+  /** 注册华为分享事件(碰一碰 / 隔空传送), 当前页面有漫画时直接跨设备发送 */
+  /** 分享接收沙箱目录 */
+  private shareReceiveDir(): string {
+    return this.context.cacheDir + '/share_receive';
+  }
+
+  /** 华为分享接收能力注册项(注销时要复用同一个对象) */
+  private shareRecvCapability: harmonyShare.RecvCapabilityRegistry | null = null;
+
+  /** 注册华为分享事件(碰一碰 / 隔空传送)与跨设备文件接收能力 */
+  private registerHarmonyShareListeners(windowId: number): void {
+    try {
+      harmonyShare.on('knockShare', (target: harmonyShare.SharableTarget) => {
+        shareService.handleSharableTarget(target);
+      });
+      harmonyShare.on('gesturesShare', (target: harmonyShare.SharableTarget) => {
+        shareService.handleSharableTarget(target);
+      });
+
+      // 接收端: 注册纯文本分享能力, 对端通过华为分享发来的文件会先收进沙箱再自动导入
+      const dir = this.shareReceiveDir();
+      if (!fs.accessSync(dir)) {
+        fs.mkdirSync(dir, true);
+      }
+      const capability: harmonyShare.RecvCapabilityRegistry = {
+        windowId: windowId,
+        capabilities: [
+          { utd: utd.UniformDataType.PLAIN_TEXT, maxSupportedCount: 1 }
+        ]
+      };
+      this.shareRecvCapability = capability;
+      harmonyShare.on('dataReceive', capability, (target: harmonyShare.ReceivableTarget) => {
+        this.onDataReceiveTarget(target);
+      });
+      hilog.info(DOMAIN, TAG, '华为分享监听与接收能力已注册');
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, '注册华为分享监听失败: %{public}s', `${e}`);
+    }
+  }
+
+  /** 收到分享接收请求: 把文件收进沙箱并解析导入 */
+  private onDataReceiveTarget(target: harmonyShare.ReceivableTarget): void {
+    const dir = this.shareReceiveDir();
+    try {
+      if (!fs.accessSync(dir)) {
+        fs.mkdirSync(dir, true);
+      }
+      target.receive(dir, {
+        onDataReceived: (shared: systemShare.SharedData) => {
+          hilog.info(DOMAIN, TAG, '分享文件已接收, 开始导入');
+          const ok = shareService.importReceivedFiles(dir);
+          const fromRecords = shareService.importSharedData(shared);
+          hilog.info(DOMAIN, TAG, '分享导入结果: file=%{public}s, record=%{public}s',
+            ok ? 'ok' : 'fail', fromRecords ? 'ok' : 'fail');
+        },
+        onResult: (code: harmonyShare.ShareResultCode) => {
+          hilog.info(DOMAIN, TAG, '分享接收完成 code=%{public}d', code as number);
+        }
+      }).catch((e: Error) => {
+        hilog.error(DOMAIN, TAG, 'receive 调用失败: %{public}s', `${e}`);
+      });
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, '处理分享接收失败: %{public}s', `${e}`);
+    }
+  }
+
+  /** 注销华为分享事件监听 */
+  private unregisterHarmonyShareListeners(): void {
+    try {
+      harmonyShare.off('knockShare');
+      harmonyShare.off('gesturesShare');
+      const cap = this.shareRecvCapability;
+      if (cap !== null) {
+        harmonyShare.off('dataReceive', cap);
+        this.shareRecvCapability = null;
+      }
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, '注销华为分享监听失败: %{public}s', `${e}`);
+    }
   }
 
   /** 启动 JS 运行时并做一次诊断(验证 继承/存储/编码/网络/真实源脚本) */
@@ -155,6 +286,9 @@ export default class EntryAbility extends UIAbility {
         Math.round(size.width / density),
         Math.round(size.height / density));
     });
+    // 注册华为分享(碰一碰/隔空传送)与跨设备文件接收
+    this.registerHarmonyShareListeners(mainWin.getWindowProperties().id);
+
 
     windowStage.loadContent('pages/Index', (err) => {
       if (err.code) {
@@ -166,6 +300,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageDestroy(): void {
+    this.unregisterHarmonyShareListeners();
     // Main window is destroyed, release UI related resources
     try {
       display.off('foldStatusChange', this.foldCallback);

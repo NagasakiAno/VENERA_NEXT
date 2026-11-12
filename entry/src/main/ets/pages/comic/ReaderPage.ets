@@ -175,6 +175,10 @@ export struct ReaderPage {
   private bgColors: string[] = ['#FFF5F0', '#FFFDF0', '#FFFFFF', '#F0F5FF', '#2A2A2A'];
   @State bgIndex: number = 0;
 
+  // 切换阅读模式时的一次性同步状态: 期间忽略视图自动上报的滚动/索引事件, 避免被复位到第 1 页
+  private switchingMode: boolean = false;
+  private modeTargetPage: number = 0;
+
   private swiperCtrl: SwiperController = new SwiperController();
   private scrollCtrl: Scroller = new Scroller();
   // 每个 RICH 页独立 WebController(按需创建, 懒加载)
@@ -188,26 +192,8 @@ export struct ReaderPage {
     return this.richControllers[idx];
   }
 
-  private settingsCtrl: CustomDialogController = new CustomDialogController({
-    builder: ReaderSettingsDialog({
-      currentPage: this.curPage,
-      totalPages: this.maxPage(),
-      mode: this.mode,
-      isLandscape: this.isLandscape,
-      isImage: this.isImage,
-      isRich: this.isRichChapter(),
-      bgColors: this.bgColors,
-      bgIndex: this.bgIndex,
-      onPageChange: (i: number) => { this.goPage(i); },
-      onModeChange: (m: number) => { this.mode = m; this.haptic(); this.settingsCtrl.close(); },
-      onBgChange: (i: number) => { this.bgIndex = i; this.haptic(); },
-      onBack: () => { this.onBack(); }
-    }),
-    autoCancel: true,
-    alignment: DialogAlignment.Bottom,
-    backgroundColor: '#001A1A1E',
-    systemMaterial: READER_MATERIAL
-  });
+  // 设置弹窗: 每次打开时按当前页/总页数重新创建, 保证页码轮盘数据是最新的
+  private settingsCtrl: CustomDialogController | null = null;
 
   aboutToAppear(): void {
     if (this.externalChapter !== null && this.externalChapter.pages.length > 0) {
@@ -349,9 +335,81 @@ export struct ReaderPage {
     this.ensureRange(t - 1, appSettings.get<number>('preloadPageCount', 3) + 1);
     this.onProgress(t, this.chapter.pages.length);
     this.haptic();
+    // 页码轮盘/点击翻页都必须真正驱动视图移动(仅改状态不会让 Swiper/List 跟着走)
+    this.driveViewTo(t);
+  }
+
+  /** 把当前视图(翻页 Swiper / 滚动 List)移动到指定页 */
+  private driveViewTo(index: number): void {
+    try {
+      if (this.mode === 1) {
+        this.swiperCtrl.changeIndex(index, true);
+      } else {
+        this.scrollCtrl.scrollToIndex(index, true, ScrollAlign.START);
+      }
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, '切换视图位置失败: %{public}s', `${e}`);
+    }
+  }
+
+  /** 切换阅读模式(翻页/滚动), 保持当前页不回到第一页 */
+  /** 切换阅读模式(翻页/滚动), 保持当前页(含「继续阅读」进入的非首屏) */
+  private switchMode(m: number): void {
+    if (this.mode === m) {
+      this.settingsCtrl?.close();
+      return;
+    }
+    const target = this.curPage;
+    this.switchingMode = true;
+    this.modeTargetPage = target;
+    this.mode = m;
+    this.haptic();
+    this.settingsCtrl?.close();
+    // 新视图刚创建时可能先上报 index=0(滚动列表尤其明显), 同步期间忽略这些事件
+    setTimeout(() => {
+      this.driveViewTo(target);
+      this.curPage = target;
+      this.ensureRange(target - 1, appSettings.get<number>('preloadPageCount', 3) + 1);
+      this.onProgress(target, this.chapter.pages.length);
+    }, 60);
+    // 二次校正: 视图完成布局后再定位一次, 然后解除同步锁
+    setTimeout(() => {
+      this.driveViewTo(target);
+      this.curPage = target;
+      this.switchingMode = false;
+      // 保险: 若视图仍未落到目标页(个别机型首次布局较慢), 再校正一次
+      setTimeout(() => {
+        if (this.curPage !== target) {
+          this.curPage = target;
+          this.driveViewTo(target);
+          this.onProgress(target, this.chapter.pages.length);
+        }
+      }, 300);
+    }, 260);
   }
 
   private openSettings(): void {
+    // 每次打开重建, 保证 currentPage/totalPages 为最新值(否则页码轮盘拿到旧数据, 跳页失效)
+    this.settingsCtrl = new CustomDialogController({
+      builder: ReaderSettingsDialog({
+        currentPage: this.curPage,
+        totalPages: this.maxPage(),
+        mode: this.mode,
+        isLandscape: this.isLandscape,
+        isImage: this.isImage,
+        isRich: this.isRichChapter(),
+        bgColors: this.bgColors,
+        bgIndex: this.bgIndex,
+        onPageChange: (i: number) => { this.goPage(i); },
+        onModeChange: (m: number) => { this.switchMode(m); },
+        onBgChange: (i: number) => { this.bgIndex = i; this.haptic(); },
+        onBack: () => { this.onBack(); }
+      }),
+      autoCancel: true,
+      alignment: DialogAlignment.Bottom,
+      backgroundColor: '#001A1A1E',
+      systemMaterial: READER_MATERIAL
+    });
     this.settingsCtrl.open();
   }
 
@@ -359,6 +417,7 @@ export struct ReaderPage {
   private touchY: number = 0;
   private swiped: boolean = false;
 
+  // 统一点击+左右滑动翻页处理 (zone: 0=左 1=中 2=右)
   // 统一点击+左右滑动翻页处理 (zone: 0=左 1=中 2=右)
   private handleTap(e: TouchEvent, zone: number): void {
     if (e.type === TouchType.Down) {
@@ -370,28 +429,36 @@ export struct ReaderPage {
       const dy = e.touches[0].y - this.touchY;
       if (!this.swiped && Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
         this.swiped = true;
+        // 横屏双栏时一次翻一整屏(2 页), 否则索引 +1 只把画面平移一页, 看起来像"往左推一格"
+        const step = this.pageStep();
         if (dx < 0) {
-          this.goPage(this.curPage + 1);
+          this.goPage(this.curPage + step);
         } else {
-          this.goPage(this.curPage - 1);
+          this.goPage(this.curPage - step);
         }
       }
     } else if ((e.type === TouchType.Up || e.type === TouchType.Cancel) && !this.swiped) {
-      // 点击: 左上一页 / 中无操作(设置仅由tabbar呼出) / 右下一页; 到头则切章
+      // 点击: 左上一页 / 中无操作 / 右下一页; 到头则切章
+      const step = this.pageStep();
       if (zone === 0) {
         if (this.curPage === 0) {
           this.switchChapter(-1);
         } else {
-          this.goPage(this.curPage - 1);
+          this.goPage(this.curPage - step);
         }
       } else if (zone === 2) {
         if (this.curPage >= this.maxPage() - 1) {
           this.switchChapter(1);
         } else {
-          this.goPage(this.curPage + 1);
+          this.goPage(this.curPage + step);
         }
       }
     }
+  }
+
+  /** 一次翻页跨过的页数: 横屏双栏为 2, 其余为 1 */
+  private pageStep(): number {
+    return (this.isLandscape && !this.isRichChapter() && this.chapter.pages.length > 1) ? 2 : 1;
   }
 
   // ===== 图片页: 铺满 + 模糊背景 =====
@@ -553,6 +620,11 @@ export struct ReaderPage {
     .loop(false)
     .displayCount(this.isLandscape && !this.isRichChapter() ? 2 : 1)
     .onChange((i: number) => {
+      // 模式切换同步期间忽略自动上报, 保持目标页
+      if (this.switchingMode) {
+        this.curPage = this.modeTargetPage;
+        return;
+      }
       this.curPage = i;
       this.ensureRange(i - 1, appSettings.get<number>('preloadPageCount', 3) + 1);
       this.onProgress(i, this.chapter.pages.length);
@@ -581,6 +653,11 @@ export struct ReaderPage {
     .scrollBar(BarState.Off)
     // 滚动模式: 按可见区间懒加载网络章节图片
     .onScrollIndex((start: number, end: number) => {
+      // 新列表初次布局会上报 start=0, 模式切换同步期间忽略, 否则会被复位到第一页
+      if (this.switchingMode) {
+        this.curPage = this.modeTargetPage;
+        return;
+      }
       this.ensureRange(start, end - start + 1);
       this.curPage = start;
       this.onProgress(start, this.chapter.pages.length);
@@ -689,6 +766,15 @@ export struct ReaderPage {
         // 富文本(RICH)保持滚动模式; 其余内容横屏强制翻页
         if (this.isLandscape && !this.isRichChapter()) {
           this.mode = 1;
+        }
+        // 横屏双栏: 起始页对齐到偶数页, 保证每屏都是完整两页/翻页步进不会卡在末页
+        if (this.mode === 1 && !this.isRichChapter() && this.chapter.pages.length > 1) {
+          const aligned = this.curPage - (this.curPage % 2);
+          if (aligned !== this.curPage) {
+            this.curPage = aligned;
+            this.driveViewTo(aligned);
+            this.onProgress(aligned, this.chapter.pages.length);
+          }
         }
       }
     })

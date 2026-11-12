@@ -21,7 +21,10 @@ import { readHistoryService, ReadHistoryItem } from '../../services/ReadHistoryS
 import { commentService, CommentResult } from '../../services/CommentService';
 import { persistWebFavorites } from '../../utils/FileImporter';
 import { appSettings } from '../../model/AppSettings';
-import { knockShareService, ShareType, WebShareData, LocalShareData } from '../../services/KnockShareService';
+import { shareService, ShareType, WebShareData, LocalShareData } from '../../services/ShareService';
+import { networkFavoritesService, NetworkFavoriteFolder } from '../../services/NetworkFavoritesService';
+import { comicSourceManager } from '../../model/ComicSource';
+import { jsRuntime } from '../../runtime/JsRuntime';
 import { ReaderSession } from './ReaderSession';
 import { PRIMARY, PRIMARY_50, SUCCESS, GRAY_100, GRAY_500, GRAY_900, CARD, BG, MUTED_FG, ERROR,
   RADIUS_SM, RADIUS_MD, RADIUS_LG, SPACE_2, SPACE_3, SPACE_4,
@@ -91,6 +94,9 @@ function tagGroupColor(ns: string): [string, string] {
     case 'artist':
     case 'Artist':
       return ['#FF1890FF', '#1A1890FF']; // 亮蓝
+    case '漫画ID':
+    case 'Comic ID':
+      return ['#FF5319D4', '#1A5319D4']; // 靛蓝
     default:
       return ['#FF909399', '#1A909399']; // 默认灰色
   }
@@ -110,6 +116,119 @@ function buildTagGroups(d: ComicDetails): TagGroup[] {
   });
   return out;
 }
+
+/** 下载范围选择弹窗: 章节多选 + 全选 */
+@CustomDialog
+struct DownloadRangeDialog {
+  controller?: CustomDialogController;
+  titles: string[] = [];
+  downloaded: boolean[] = [];
+  onConfirm: (indices: number[]) => void = () => {};
+  @State selected: boolean[] = [];
+  @State allSelected: boolean = true;
+
+  aboutToAppear(): void {
+    const s: boolean[] = [];
+    for (let i = 0; i < this.titles.length; i++) {
+      s.push(true);
+    }
+    this.selected = s;
+    this.allSelected = this.titles.length > 0;
+  }
+
+  private toggle(idx: number): void {
+    const s: boolean[] = this.selected.slice();
+    s[idx] = !s[idx];
+    this.selected = s;
+    let all = s.length > 0;
+    for (let i = 0; i < s.length; i++) {
+      if (!s[i]) { all = false; break; }
+    }
+    this.allSelected = all;
+  }
+
+  private toggleAll(): void {
+    const next = !this.allSelected;
+    const s: boolean[] = [];
+    for (let i = 0; i < this.titles.length; i++) {
+      s.push(next);
+    }
+    this.selected = s;
+    this.allSelected = next;
+  }
+
+  private selectedCount(): number {
+    let n = 0;
+    for (let i = 0; i < this.selected.length; i++) {
+      if (this.selected[i]) { n++; }
+    }
+    return n;
+  }
+
+  @Builder
+  chapterRow(title: string, idx: number) {
+    Row({ space: 10 }) {
+      Stack() {
+        if (this.selected[idx]) {
+          SymbolGlyph($r('sys.symbol.checkmark')).fontSize(12).fontColor([CARD])
+        }
+      }
+      .width(20).height(20).borderRadius(10)
+      .backgroundColor(this.selected[idx] ? PRIMARY : GRAY_100)
+
+      Text(title).fontSize(FS_SMALL).fontColor(GRAY_900)
+        .layoutWeight(1).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+      if (this.downloaded.length > idx && this.downloaded[idx]) {
+        Text('已下载').fontSize(10).fontColor(MUTED_FG)
+      }
+    }
+    .width('100%').height(42)
+    .onClick(() => { this.toggle(idx); })
+  }
+
+  build() {
+    Column() {
+      Row() {
+        Text('选择下载章节').fontSize(16).fontWeight(FontWeight.Bold).fontColor(GRAY_900)
+        Blank()
+        Text(this.allSelected ? '取消全选' : '全选').fontSize(FS_SMALL).fontColor(PRIMARY)
+          .onClick(() => { this.toggleAll(); })
+      }
+      .width('100%').padding({ left: SPACE_3, right: SPACE_3, top: SPACE_3, bottom: SPACE_2 })
+
+      List() {
+        ForEach(this.titles, (title: string, idx: number) => {
+          ListItem() {
+            this.chapterRow(title, idx)
+          }
+        }, (title: string, idx: number) => 'dl#' + idx)
+      }
+      .width('100%').layoutWeight(1).padding({ left: SPACE_3, right: SPACE_3 })
+      .scrollBar(BarState.Off)
+
+      Row({ space: SPACE_2 }) {
+        Text('取消').fontSize(FS_BODY).fontColor(GRAY_900)
+          .height(44).layoutWeight(1).textAlign(TextAlign.Center).borderRadius(RADIUS_MD)
+          .backgroundColor(GRAY_100)
+          .onClick(() => { this.controller?.close(); })
+        Text('下载所选 (' + this.selectedCount() + ')').fontSize(FS_BODY).fontColor(CARD)
+          .height(44).layoutWeight(2).textAlign(TextAlign.Center).borderRadius(RADIUS_MD)
+          .backgroundColor(PRIMARY)
+          .onClick(() => {
+            const out: number[] = [];
+            for (let i = 0; i < this.selected.length; i++) {
+              if (this.selected[i]) { out.push(i); }
+            }
+            this.controller?.close();
+            this.onConfirm(out);
+          })
+      }
+      .width('100%').padding(SPACE_3)
+    }
+    .width('100%').height(520).backgroundColor(CARD).borderRadius(RADIUS_LG)
+  }
+}
+
 
 @Component
 export struct ComicDetailPage {
@@ -173,6 +292,8 @@ export struct ComicDetailPage {
   @State commentLoading: boolean = false;
   @State commentInput: string = '';
   @State commentSending: boolean = false;
+  /** 下载范围弹窗控制器(每次打开重建) */
+  private downloadCtrl: CustomDialogController | null = null;
   @State showCommentInput: boolean = false;
   // === 回复展开状态 ===
   @State expandedReplyId: string = '';
@@ -184,6 +305,11 @@ export struct ComicDetailPage {
     this.currentId = this.comicId;
     this.reverseChapters = appSettings.get<boolean>('reverseChapterOrder', false);
     this.reload();
+  }
+
+  aboutToDisappear(): void {
+    // 离开详情页后不再提供分享内容, 避免分享旧页面
+    shareService.clearPayload();
   }
 
   private reload(): void {
@@ -205,7 +331,20 @@ export struct ComicDetailPage {
       this.hasDetail = true;
       this.chapters = buildChapters(d, this.reverseChapters);
       this.tags = buildTags(d);
+      // 更新分享负载(供碰一碰/隔空传送使用)
+      shareService.setCurrentPayload(this.buildSharePayload(d));
       this.tagGroups = buildTagGroups(d);
+      // WEB 源追加漫画 ID 分组到标签栏(用源返回的 comicId, 即搜索框可直跳的ID)
+      const displayId = d.comicId.length > 0 ? d.comicId : this.currentId;
+      if (this.sourceKey.length > 0 && displayId.length > 0) {
+        const idGroup = new TagGroup();
+        idGroup.namespace = '漫画ID';
+        idGroup.items = [displayId];
+        const idColors = tagGroupColor('漫画ID');
+        idGroup.color = idColors[0];
+        idGroup.bgColor = idColors[1];
+        this.tagGroups.push(idGroup);
+      }
       this.recommend = d.recommend;
     } catch (e) {
       this.errorMsg = `${e}`;
@@ -577,80 +716,86 @@ export struct ComicDetailPage {
   }
 
   /** 主操作: 收藏 / 继续阅读(有进度) 或 从头阅读 */
+  /** 主操作: 收藏/下载/分享 + 继续阅读/从头阅读(两行排布, 窄面板也不会被挤压) */
   @Builder
   actionRow() {
-    Row({ space: 10 }) {
-      Column({ space: 2 }) {
-        SymbolGlyph($r('sys.symbol.heart')).fontSize(22)
-          .fontColor([this.isFaved ? '#FFE8455E' : GRAY_500])
-        Text(this.isFaved ? '已收藏' : '收藏').fontSize(FS_SMALL).fontColor(MUTED_FG)
-      }
-      .width(72).height(48).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
-      .backgroundColor(GRAY_100)
-      .scale({ x: this.pressScaleOf('fav'), y: this.pressScaleOf('fav') })
-      .animation({ duration: 120, curve: Curve.EaseOut })
-      .onClick(() => {
-        this.toggleFavorite();
-      })
-      .onTouch((e: TouchEvent) => { this.pressTouch(e, 'fav'); })
-
-      Column({ space: 2 }) {
-        SymbolGlyph($r('sys.symbol.arrow_down')).fontSize(22)
-          .fontColor([GRAY_500])
-        Text('下载').fontSize(FS_SMALL).fontColor(MUTED_FG)
-      }
-      .width(72).height(48).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
-      .backgroundColor(GRAY_100)
-      .scale({ x: this.pressScaleOf('dl'), y: this.pressScaleOf('dl') })
-      .animation({ duration: 120, curve: Curve.EaseOut })
-      .onClick(() => {
-        this.showDownloadDialog();
-      })
-      .onTouch((e: TouchEvent) => { this.pressTouch(e, 'dl'); })
-
-      // 碰一碰分享按钮 - 暂时隐藏，后续完善后再放出
-      // Column({ space: 2 }) {
-      //   SymbolGlyph($r('sys.symbol.share')).fontSize(22)
-      //     .fontColor([GRAY_500])
-      //   Text('碰一碰').fontSize(FS_SMALL).fontColor(MUTED_FG)
-      // }
-      // .width(72).height(48).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
-      // .backgroundColor(GRAY_100)
-      // .scale({ x: this.pressScaleOf('knock'), y: this.pressScaleOf('knock') })
-      // .animation({ duration: 120, curve: Curve.EaseOut })
-      // .onClick(() => {
-      //   this.startKnockShare();
-      // })
-      // .onTouch((e: TouchEvent) => { this.pressTouch(e, 'knock'); })
-
-      if (this.progress !== null) {
+    Column({ space: 10 }) {
+      Row({ space: 10 }) {
         Column({ space: 2 }) {
-          Text('继续阅读').fontSize(15).fontColor(CARD).fontWeight(FontWeight.Medium)
-          Text(this.progressBrief()).fontSize(9).fontColor('#CCFFFFFF')
-            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+          SymbolGlyph($r('sys.symbol.heart')).fontSize(22)
+            .fontColor([this.isFaved ? '#FFE8455E' : GRAY_500])
+          Text(this.isFaved ? '已收藏' : '收藏').fontSize(FS_SMALL).fontColor(MUTED_FG)
         }
         .height(48).layoutWeight(1).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
-        .backgroundColor(PRIMARY)
-        .scale({ x: this.pressScaleOf('continue'), y: this.pressScaleOf('continue') })
+        .backgroundColor(GRAY_100)
+        .scale({ x: this.pressScaleOf('fav'), y: this.pressScaleOf('fav') })
         .animation({ duration: 120, curve: Curve.EaseOut })
         .onClick(() => {
-          this.continueReading();
+          this.toggleFavorite();
         })
-        .onTouch((e: TouchEvent) => { this.pressTouch(e, 'continue'); })
-      }
+        .onTouch((e: TouchEvent) => { this.pressTouch(e, 'fav'); })
 
-      Column() {
-        Text(this.progress !== null ? '从头阅读' : '开始阅读')
-          .fontSize(15).fontColor(PRIMARY).fontWeight(FontWeight.Medium)
+        Column({ space: 2 }) {
+          SymbolGlyph($r('sys.symbol.arrow_down')).fontSize(22)
+            .fontColor([GRAY_500])
+          Text('下载').fontSize(FS_SMALL).fontColor(MUTED_FG)
+        }
+        .height(48).layoutWeight(1).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
+        .backgroundColor(GRAY_100)
+        .scale({ x: this.pressScaleOf('dl'), y: this.pressScaleOf('dl') })
+        .animation({ duration: 120, curve: Curve.EaseOut })
+        .onClick(() => {
+          this.showDownloadDialog();
+        })
+        .onTouch((e: TouchEvent) => { this.pressTouch(e, 'dl'); })
+
+        Column({ space: 2 }) {
+          SymbolGlyph($r('sys.symbol.share')).fontSize(22)
+            .fontColor([GRAY_500])
+          Text('分享').fontSize(FS_SMALL).fontColor(MUTED_FG)
+        }
+        .height(48).layoutWeight(1).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
+        .backgroundColor(GRAY_100)
+        .scale({ x: this.pressScaleOf('share'), y: this.pressScaleOf('share') })
+        .animation({ duration: 120, curve: Curve.EaseOut })
+        .onClick(() => {
+          this.startShare();
+        })
+        .onTouch((e: TouchEvent) => { this.pressTouch(e, 'share'); })
       }
-      .height(48).layoutWeight(1).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
-      .backgroundColor(PRIMARY_50)
-      .scale({ x: this.pressScaleOf('start'), y: this.pressScaleOf('start') })
-      .animation({ duration: 120, curve: Curve.EaseOut })
-      .onClick(() => {
-        this.readFromStart();
-      })
-      .onTouch((e: TouchEvent) => { this.pressTouch(e, 'start'); })
+      .width('100%')
+
+      Row({ space: 10 }) {
+        if (this.progress !== null) {
+          Column({ space: 2 }) {
+            Text('继续阅读').fontSize(15).fontColor(CARD).fontWeight(FontWeight.Medium)
+            Text(this.progressBrief()).fontSize(10).fontColor('#CCFFFFFF')
+              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+          .height(52).layoutWeight(1).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
+          .backgroundColor(PRIMARY)
+          .scale({ x: this.pressScaleOf('continue'), y: this.pressScaleOf('continue') })
+          .animation({ duration: 120, curve: Curve.EaseOut })
+          .onClick(() => {
+            this.continueReading();
+          })
+          .onTouch((e: TouchEvent) => { this.pressTouch(e, 'continue'); })
+        }
+
+        Column() {
+          Text(this.progress !== null ? '从头阅读' : '开始阅读')
+            .fontSize(15).fontColor(PRIMARY).fontWeight(FontWeight.Medium)
+        }
+        .height(52).layoutWeight(1).justifyContent(FlexAlign.Center).borderRadius(RADIUS_MD)
+        .backgroundColor(PRIMARY_50)
+        .scale({ x: this.pressScaleOf('start'), y: this.pressScaleOf('start') })
+        .animation({ duration: 120, curve: Curve.EaseOut })
+        .onClick(() => {
+          this.readFromStart();
+        })
+        .onTouch((e: TouchEvent) => { this.pressTouch(e, 'start'); })
+      }
+      .width('100%')
     }
     .width('100%').margin({ top: SPACE_3 })
   }
@@ -665,33 +810,47 @@ export struct ComicDetailPage {
   }
 
   /** 下载对话框：选择下载范围 */
+  /** 下载对话框: 弹层内章节多选(可全选), 不再只有"全部/前5章"固定选项 */
   private showDownloadDialog(): void {
     if (this.chapters.length === 0) {
       promptAction.showToast({ message: '没有可下载的章节' });
       return;
     }
-    promptAction.showDialog({
-      title: '下载章节',
-      message: `共 ${this.chapters.length} 个章节，选择下载范围：`,
-      buttons: [
-        { text: '全部章节', color: '#FF4F8EF7' },
-        { text: '前5章', color: '#FF4F8EF7' },
-        { text: '取消', color: '#FF999999' }
-      ]
-    }).then((result: promptAction.ShowDialogSuccessResponse) => {
-      if (result.index === 0) {
-        this.enqueueDownload(0, this.chapters.length - 1);
-      } else if (result.index === 1) {
-        const end = Math.min(4, this.chapters.length - 1);
-        this.enqueueDownload(0, end);
-      }
+    const titles: string[] = [];
+    const downloaded: boolean[] = [];
+    for (let i = 0; i < this.chapters.length; i++) {
+      const c = this.chapters[i];
+      const name = c.title.length > 0 ? c.title : c.id;
+      titles.push(c.group.length > 0 ? (c.group + ' · ' + name) : name);
+      const taskId = this.sourceKey + '|' + this.currentId + '|' + c.id;
+      downloaded.push(downloadQueueStore.findTask(taskId) !== null);
+    }
+    this.downloadCtrl = new CustomDialogController({
+      builder: DownloadRangeDialog({
+        titles: titles,
+        downloaded: downloaded,
+        onConfirm: (indices: number[]) => { this.enqueueDownloadIndices(indices); }
+      }),
+      autoCancel: true,
+      alignment: DialogAlignment.Center,
+      backgroundColor: Color.Transparent,
+      customStyle: true
     });
+    this.downloadCtrl.open();
   }
 
-  /** 将指定范围的章节加入下载队列 */
-  private enqueueDownload(startIdx: number, endIdx: number): void {
+  /** 将选中下标的章节加入下载队列 */
+  private enqueueDownloadIndices(indices: number[]): void {
+    if (indices.length === 0) {
+      promptAction.showToast({ message: '没有选择章节' });
+      return;
+    }
     let added = 0;
-    for (let i = startIdx; i <= endIdx; i++) {
+    for (let k = 0; k < indices.length; k++) {
+      const i = indices[k];
+      if (i < 0 || i >= this.chapters.length) {
+        continue;
+      }
       const c = this.chapters[i];
       const taskId = this.sourceKey + '|' + this.currentId + '|' + c.id;
       const task = new DownloadTask(taskId, this.sourceKey, this.currentId, c.id,
@@ -701,24 +860,18 @@ export struct ComicDetailPage {
       }
     }
     if (added > 0) {
-      promptAction.showToast({ message: `已加入下载队列 (${added} 个章节)` });
+      promptAction.showToast({ message: '已加入下载队列 (' + added + ' 个章节)' });
       downloadService.startQueue();
     } else {
       promptAction.showToast({ message: '这些章节已在下载队列中' });
     }
   }
 
-  /** 碰一碰分享: 将当前漫画信息通过 NFC 碰一碰分享给附近设备 */
-  private startKnockShare(): void {
-    if (!this.hasDetail) {
-      promptAction.showToast({ message: '漫画信息未加载完成' });
-      return;
-    }
-    const d = this.detail;
-    // 判断是 WEB 源还是本地源
+  /** 分享: 通过系统分享面板(华为分享)发送当前漫画详情 */
+  /** 构造当前漫画的分享负载(WEB 源 / 本地源共用) */
+  private buildSharePayload(d: ComicDetails): WebShareData | LocalShareData {
     if (this.sourceKey.length > 0) {
-      // WEB 源: 分享 sourceKey + comicId, 对方可直接关联到正确源
-      const shareData: WebShareData = {
+      const web: WebShareData = {
         type: ShareType.WEB,
         sourceKey: this.sourceKey,
         comicId: this.currentId,
@@ -728,28 +881,32 @@ export struct ComicDetailPage {
         description: d.description,
         tags: this.tags.map((t: TagItem) => t.text)
       };
-      knockShareService.registerShare(shareData);
-      promptAction.showToast({ message: '碰一碰分享已准备，请将设备靠近对方设备' });
-    } else {
-      // 本地源: 分享元信息(文件包传输暂不支持)
-      const shareData: LocalShareData = {
-        type: ShareType.LOCAL,
-        title: d.title,
-        cover: d.cover,
-        author: d.uploader,
-        description: d.description,
-        tags: this.tags.map((t: TagItem) => t.text),
-        fileFormat: '',
-        fileSize: 0
-      };
-      knockShareService.registerShare(shareData);
-      promptAction.showToast({ message: '碰一碰分享已准备，本地文件传输暂不支持' });
+      return web;
     }
+    const localData: LocalShareData = {
+      type: ShareType.LOCAL,
+      title: d.title,
+      cover: d.cover,
+      author: d.uploader,
+      description: d.description,
+      tags: this.tags.map((t: TagItem) => t.text),
+      fileFormat: '',
+      fileSize: 0
+    };
+    return localData;
   }
 
-  /** 注销碰一碰分享监听(页面退出时调用) */
-  private stopKnockShare(): void {
-    knockShareService.unregisterShare();
+  /** 分享: 通过系统分享面板(含华为分享)发送当前漫画详情 */
+  private startShare(): void {
+    if (!this.hasDetail) {
+      promptAction.showToast({ message: '漫画信息未加载完成' });
+      return;
+    }
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    const payload = this.buildSharePayload(this.detail);
+    // 同步为碰一碰/隔空传送的当前负载
+    shareService.setCurrentPayload(payload);
+    shareService.shareViaSystem(ctx, payload);
   }
 
   /** WEB 收藏条目在书架中的 id */
@@ -757,7 +914,7 @@ export struct ComicDetailPage {
     return 'web_' + this.sourceKey + '_' + this.currentId;
   }
 
-  /** 收藏/取消收藏: 同时写入书架(LocalBookStore)和收藏夹(LocalFavoritesStore) */
+  /** 收藏/取消收藏: 同时写入书架和收藏夹, 若源已登录则同步回源账号 */
   private toggleFavorite(): void {
     if (!this.hasDetail) {
       return;
@@ -771,6 +928,8 @@ export struct ComicDetailPage {
       this.isFaved = false;
       persistWebFavorites(ctx, localBookStore.all());
       promptAction.showToast({ message: '已取消收藏' });
+      // 异步同步到源账号(取消收藏)
+      this.syncFavoriteToSource(false, '');
       return;
     }
     // 添加收藏：写入书架 + 默认收藏夹
@@ -795,6 +954,96 @@ export struct ComicDetailPage {
     this.isFaved = true;
     persistWebFavorites(ctx, localBookStore.all());
     promptAction.showToast({ message: '已收藏' });
+    // 异步同步到源账号(添加收藏)
+    this.syncFavoriteToSource(true, '');
+  }
+
+  /**
+   * 同步收藏操作到源账号(异步, 不阻塞 UI)
+   * - 添加收藏时: 若源支持多文件夹, 弹出文件夹选择对话框
+   * - 取消收藏时: 直接调用 addOrDelFavorite(isAdding=false)
+   * - 未登录或不支持收藏的源: 静默跳过
+   */
+  private async syncFavoriteToSource(isAdding: boolean, folderId: string): Promise<void> {
+    if (this.sourceKey.length === 0) {
+      return; // 本地源无需同步
+    }
+    try {
+      const meta = comicSourceManager.findJsSource(this.sourceKey);
+      if (meta === null) {
+        return;
+      }
+      if (!jsRuntime.isLogged(this.sourceKey)) {
+        return; // 未登录, 跳过
+      }
+      // 确保收藏能力已解析
+      if (!meta.favorite.hasAny()) {
+        await networkFavoritesService.ensureCapabilities(this.sourceKey);
+      }
+      if (!meta.favorite.hasAddOrDelFavorite) {
+        return; // 源不支持收藏操作
+      }
+
+      let targetFolderId = folderId;
+
+      if (isAdding && meta.favorite.multiFolder && meta.favorite.hasLoadFolders) {
+        // 多文件夹源: 加载收藏夹列表并弹出选择对话框
+        const folders = await networkFavoritesService.loadFolders(this.sourceKey, this.currentId);
+        if (folders.length > 0) {
+          const selected = await this.showFolderSelectionDialog(folders);
+          if (selected === null) {
+            return; // 用户取消选择
+          }
+          targetFolderId = selected;
+        }
+      }
+
+      await networkFavoritesService.addOrDelFavorite(
+        this.sourceKey, this.currentId, targetFolderId, isAdding, ''
+      );
+      promptAction.showToast({
+        message: isAdding ? '已同步到源收藏' : '已从源收藏移除'
+      });
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, '源收藏同步失败: %{public}s', `${e}`);
+      promptAction.showToast({ message: '源收藏同步失败: ' + `${e}` });
+    }
+  }
+
+  /**
+   * 弹出收藏夹选择对话框(使用 showDialog, 最多 3 个按钮)
+   * @returns 选中的文件夹 ID, 用户取消时返回 null
+   */
+  private showFolderSelectionDialog(folders: NetworkFavoriteFolder[]): Promise<string | null> {
+    if (folders.length === 0) {
+      return Promise.resolve('');
+    }
+    if (folders.length === 1) {
+      return Promise.resolve(folders[0].id); // 只有一个文件夹, 直接使用
+    }
+    // showDialog 最多 3 个按钮: 2 个文件夹 + 取消
+    const maxItems = Math.min(folders.length, 2);
+    const buttons: promptAction.Button[] = [];
+    for (let i = 0; i < maxItems; i++) {
+      buttons.push({ text: folders[i].name, color: '#FF4F8EF7' });
+    }
+    buttons.push({ text: '取消', color: '#FF999999' });
+
+    return new Promise<string | null>((resolve) => {
+      promptAction.showDialog({
+        title: '选择收藏夹',
+        message: folders.length > 2 ? `共 ${folders.length} 个收藏夹, 显示前 2 个` : '请选择收藏夹',
+        buttons: buttons
+      }).then((result: promptAction.ShowDialogSuccessResponse) => {
+        if (result.index >= 0 && result.index < maxItems) {
+          resolve(folders[result.index].id);
+        } else {
+          resolve(null);
+        }
+      }).catch(() => {
+        resolve(null);
+      });
+    });
   }
 
   @Builder

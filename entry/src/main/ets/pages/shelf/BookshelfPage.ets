@@ -70,6 +70,8 @@ export struct BookshelfPage {
   @State pressSyncBtn: boolean = false;
   @State pressSortBtn: boolean = false;
   @State pressFolderBtn: boolean = false;
+  /** 是否已订阅收藏 store(页面重复出现时避免重复注册) */
+  private favSubscribed: boolean = false;
   // 网络收藏同步
   @State favSyncSources: ComicSourceMeta[] = [];
   @State favSyncFolders: NetworkFavoriteFolder[] = [];
@@ -97,9 +99,12 @@ export struct BookshelfPage {
     this.localItems = localBookStore.all();
     // 初始化收藏 store
     localFavoritesStore.init(ctx);
-    localFavoritesStore.subscribe(() => {
-      this.refreshFavState();
-    });
+    if (!this.favSubscribed) {
+      this.favSubscribed = true;
+      localFavoritesStore.subscribe(() => {
+        this.refreshFavState();
+      });
+    }
     this.refreshFavState();
     this.refreshWebHistory();
     // 初始化下载队列 store
@@ -182,6 +187,7 @@ export struct BookshelfPage {
     }).then((res: promptAction.ShowDialogSuccessResponse) => {
       if (res.index === 1) {
         localFavoritesStore.removeComic(this.favCurrentFolder, item.id);
+        this.refreshFavState();
         promptAction.showToast({ message: '已移除' });
       }
     }).catch((e: Error) => {});
@@ -189,18 +195,24 @@ export struct BookshelfPage {
 
   /** 获取排序+搜索后的收藏列表 */
   private getDisplayFavItems(): FavoriteItem[] {
+    // 基于 @State favItems 做筛选/排序: 收藏增删(store.notify -> refreshFavState)后
+    // 列表立即重建, 不需要切换页面才刷新
     let items: FavoriteItem[] = [];
     if (this.favSearchKeyword.length > 0) {
-      items = localFavoritesStore.searchInFolder(this.favCurrentFolder, this.favSearchKeyword);
+      const lower = this.favSearchKeyword.toLowerCase();
+      for (let i = 0; i < this.favItems.length; i++) {
+        const it = this.favItems[i];
+        if (it.title.toLowerCase().indexOf(lower) >= 0 || it.author.toLowerCase().indexOf(lower) >= 0) {
+          items.push(it);
+        }
+      }
     } else {
-      items = localFavoritesStore.getFolderComics(this.favCurrentFolder);
+      items = this.favItems.slice();
     }
     // 排序
     if (this.favSortMode === 1) {
-      // 标题 A-Z
       items.sort((a: FavoriteItem, b: FavoriteItem) => a.title.localeCompare(b.title));
     } else if (this.favSortMode === 2) {
-      // 最新添加优先
       items.sort((a: FavoriteItem, b: FavoriteItem) => b.time - a.time);
     }
     // favSortMode === 0: 保持添加顺序（displayOrder）
@@ -343,6 +355,7 @@ export struct BookshelfPage {
         for (let i = 0; i < this.favSelectedIds.length; i++) {
           localFavoritesStore.removeComic(this.favCurrentFolder, this.favSelectedIds[i]);
         }
+        this.refreshFavState();
         this.favSelectedIds = [];
         this.favSelectMode = false;
         promptAction.showToast({ message: '已移除 ' + this.favSelectedIds.length + ' 项' });
@@ -368,24 +381,27 @@ export struct BookshelfPage {
   }
 
   /** 重命名收藏夹 */
-  private showRenameFolderDialog(): void {
-    if (this.favCurrentFolder === '收藏') {
+  /** 重命名收藏夹(folderName 省略时作用于当前文件夹) */
+  private showRenameFolderDialog(folderName: string): void {
+    if (folderName === '收藏') {
       promptAction.showToast({ message: '默认文件夹不可重命名' });
       return;
     }
     promptAction.showDialog({
       title: '重命名文件夹',
-      message: '当前: ' + this.favCurrentFolder,
+      message: '当前: ' + folderName,
       buttons: [
         { text: '取消', color: GRAY_500 },
         { text: '确认', color: PRIMARY }
       ]
     }).then((res: promptAction.ShowDialogSuccessResponse) => {
       if (res.index === 1) {
-        // showDialog 不支持输入，用自动命名
-        const newName = this.favCurrentFolder + '_重命名';
-        if (localFavoritesStore.renameFolder(this.favCurrentFolder, newName)) {
-          this.favCurrentFolder = newName;
+        // showDialog 不支持输入, 用自动命名
+        const newName = folderName + '_重命名';
+        if (localFavoritesStore.renameFolder(folderName, newName)) {
+          if (this.favCurrentFolder === folderName) {
+            this.favCurrentFolder = newName;
+          }
           this.refreshFavState();
           promptAction.showToast({ message: '已重命名为: ' + newName });
         } else {
@@ -396,24 +412,52 @@ export struct BookshelfPage {
   }
 
   /** 删除收藏夹 */
-  private showDeleteFolderDialog(): void {
-    if (this.favCurrentFolder === '收藏') {
+  /** 删除收藏夹(folderName 省略时作用于当前文件夹) */
+  private showDeleteFolderDialog(folderName: string): void {
+    if (folderName === '收藏') {
       promptAction.showToast({ message: '默认文件夹不可删除' });
       return;
     }
     promptAction.showDialog({
       title: '删除文件夹',
-      message: '确定删除"' + this.favCurrentFolder + '"吗？文件夹内的收藏将一并移除。',
+      message: '确定删除"' + folderName + '"吗？文件夹内的收藏将一并移除。',
       buttons: [
         { text: '取消', color: GRAY_500 },
         { text: '删除', color: ERROR }
       ]
     }).then((res: promptAction.ShowDialogSuccessResponse) => {
       if (res.index === 1) {
-        localFavoritesStore.deleteFolder(this.favCurrentFolder);
-        this.favCurrentFolder = '收藏';
+        localFavoritesStore.deleteFolder(folderName);
+        if (this.favCurrentFolder === folderName) {
+          this.favCurrentFolder = '收藏';
+        }
         this.refreshFavState();
         promptAction.showToast({ message: '已删除文件夹' });
+      }
+    }).catch((e: Error) => {});
+  }
+
+  /** 文件夹操作: 长按文件夹标签或管理模式点 × 时调用 */
+  private showFolderActions(folderName: string): void {
+    if (folderName === '收藏') {
+      promptAction.showToast({ message: '默认文件夹不可删除或重命名' });
+      return;
+    }
+    this.favCurrentFolder = folderName;
+    this.refreshFavState();
+    promptAction.showDialog({
+      title: '文件夹管理',
+      message: '"' + folderName + '"',
+      buttons: [
+        { text: '重命名', color: PRIMARY },
+        { text: '删除', color: ERROR },
+        { text: '取消', color: GRAY_500 }
+      ]
+    }).then((res: promptAction.ShowDialogSuccessResponse) => {
+      if (res.index === 0) {
+        this.showRenameFolderDialog(folderName);
+      } else if (res.index === 1) {
+        this.showDeleteFolderDialog(folderName);
       }
     }).catch((e: Error) => {});
   }
@@ -982,14 +1026,29 @@ export struct BookshelfPage {
       Scroll() {
         Row({ space: 8 }) {
           ForEach(this.favFolderNames, (name: string) => {
-            Text(name)
-              .fontSize(FS_SMALL)
-              .fontColor(this.favCurrentFolder === name ? CARD : GRAY_500)
-              .backgroundColor(this.favCurrentFolder === name ? PRIMARY : GRAY_100)
-              .borderRadius(16)
-              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .animation({ duration: 250, curve: Curve.EaseInOut })
-              .onClick(() => { this.switchFavFolder(name); })
+            Row({ space: 2 }) {
+              Text(name)
+                .fontSize(FS_SMALL)
+                .fontColor(this.favCurrentFolder === name ? CARD : GRAY_500)
+              // 管理模式: 非默认文件夹显示删除 ×, 让「管理」按钮也能管理文件夹
+              if (this.manageMode && name !== '收藏') {
+                Text('×')
+                  .fontSize(FS_SMALL)
+                  .fontColor(CARD)
+                  .padding({ left: 4, right: 2 })
+                  .onClick(() => { this.showDeleteFolderDialog(name); })
+              }
+            }
+            .backgroundColor(this.favCurrentFolder === name ? PRIMARY : GRAY_100)
+            .borderRadius(16)
+            .padding({ left: 12, right: this.manageMode && name !== '收藏' ? 8 : 12, top: 6, bottom: 6 })
+            .animation({ duration: 250, curve: Curve.EaseInOut })
+            .gesture(
+              GestureGroup(GestureMode.Exclusive,
+                TapGesture().onAction(() => { this.switchFavFolder(name); }),
+                LongPressGesture().onAction(() => { this.showFolderActions(name); })
+              )
+            )
           }, (name: string) => name)
           // 新建文件夹按钮
           Text('+')
@@ -1570,9 +1629,9 @@ export struct BookshelfPage {
                 ]
               }).then((res: promptAction.ShowDialogSuccessResponse) => {
                 if (res.index === 0) {
-                  this.showRenameFolderDialog();
+                  this.showRenameFolderDialog(this.favCurrentFolder);
                 } else if (res.index === 1) {
-                  this.showDeleteFolderDialog();
+                  this.showDeleteFolderDialog(this.favCurrentFolder);
                 }
               }).catch((e: Error) => {});
             })

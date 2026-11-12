@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:1920px; height:1080px; overflow:hidden;
+    font-family:"HarmonyOS Sans SC","Microsoft YaHei",sans-serif; }
+
+  /* === 舞台 === */
+  .stage { width:1920px; height:1080px; position:relative;
+    background:linear-gradient(135deg,#073D94 0%,#145CDE 50%,#4D8BFF 100%);
+    display:flex; align-items:center; }
+  .deco { position:absolute; border-radius:50%; pointer-events:none; }
+  .d1 { width:680px; height:680px; top:-240px; right:-180px; background:rgba(255,255,255,0.05); }
+  .d2 { width:460px; height:460px; bottom:-180px; left:480px; background:rgba(255,255,255,0.04); }
+  .d3 { width:200px; height:200px; top:120px; left:80px; background:rgba(255,255,255,0.06); }
+  .dots { position:absolute; right:80px; bottom:80px; width:280px; height:200px;
+    background-image:radial-gradient(rgba(255,255,255,0.3) 2px,transparent 2px); background-size:28px 32px; }
+
+  /* === 左侧文案 === */
+  .copy { position:relative; z-index:5; margin-left:120px; width:780px; color:#fff; }
+  .badge { display:inline-flex; align-items:center; gap:10px; background:rgba(255,255,255,0.15);
+    border:1px solid rgba(255,255,255,0.3); border-radius:999px; padding:9px 22px;
+    font-size:20px; letter-spacing:2px; margin-bottom:32px; }
+  .badge .dot { width:8px; height:8px; border-radius:50%; background:#7CFCB0; }
+  h1 { font-size:82px; line-height:1.15; font-weight:800; letter-spacing:1px; }
+  h1 .hl { color:#FFD84D; }
+  .sub { margin-top:24px; font-size:26px; line-height:1.65; color:rgba(255,255,255,0.85); font-weight:300; }
+  .feats { margin-top:44px; display:flex; flex-direction:column; gap:18px; }
+  .feat { display:flex; align-items:center; gap:14px; font-size:24px; color:rgba(255,255,255,0.92); }
+  .feat .ic { width:48px; height:48px; border-radius:12px; background:rgba(255,255,255,0.15);
+    display:flex; align-items:center; justify-content:center; font-size:22px; flex-shrink:0; }
+
+  /* === 手机 mockup === */
+  .phone-wrap { position:absolute; right:140px; top:50%; transform:translateY(-50%) rotate(-3deg); z-index:4; }
+  .phone { width:420px; height:880px; background:#0B0D12; border-radius:54px; padding:13px;
+    box-shadow:0 50px 110px rgba(0,0,0,0.45), 0 0 0 2px rgba(255,255,255,0.1) inset; position:relative; }
+  .screen { width:100%; height:100%; border-radius:42px; overflow:hidden; background:#F1F3F5; position:relative; }
+  .punch { position:absolute; top:13px; left:50%; transform:translateX(-50%); width:104px; height:28px;
+    background:#0B0D12; border-radius:999px; z-index:30; }
+
+  /* === 发现页 UI（严格对齐 DiscoveryPage.ets）=== */
+  .title-bar { position:absolute; top:0; left:0; right:0; height:104px; z-index:20;
+    padding:0 12px 8px; }
+  .title-row { width:100%; height:56px; display:flex; align-items:center; padding-top:40px; }
+  .title-row .t { font-size:20px; font-weight:700; color:#182431; }
+  .title-row .spacer { flex:1; }
+  .icon-btn { width:40px; height:40px; border-radius:20px; display:flex; align-items:center;
+    justify-content:center; margin-left:8px; }
+  .icon-btn svg { width:18px; height:18px; }
+  .chip-row { width:100%; height:48px; display:flex; align-items:center; gap:8px;
+    padding:6px 12px; overflow:hidden; }
+  .chip { padding:6px 14px; border-radius:999px; font-size:13px; color:#182431;
+    background:transparent; white-space:nowrap; }
+  .chip.on { color:#fff; background:#B3145CDE; font-weight:600; }
+
+  .content { position:absolute; top:104px; left:0; right:0; bottom:0;
+    padding:0 12px; overflow:hidden; }
+  .part { margin-bottom:8px; }
+  .part-title { display:flex; align-items:center; gap:6px; margin-bottom:8px; }
+  .part-title .bar { width:3px; height:14px; border-radius:2px; background:#145CDE; }
+  .part-title .t { font-size:17px; font-weight:700; color:#182431; }
+  .comic-row { display:flex; gap:8px; margin-bottom:8px; }
+  .comic-cell { flex:1; }
+  .comic-cover { width:100%; aspect-ratio:0.72; border-radius:8px; background:#F1F3F5;
+    position:relative; overflow:hidden; }
+  .comic-cover .ph { position:absolute; inset:0; }
+  .comic-title { font-size:12px; color:#182431; margin-top:6px; line-height:1.3;
+    overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+
+  /* 封面纯色占位 */
+  .cv1 { background:linear-gradient(160deg,#FF6B9D,#C44569); }
+  .cv2 { background:linear-gradient(160deg,#4D8BFF,#0A4FBF); }
+  .cv3 { background:linear-gradient(160deg,#52C41A,#1F7A0A); }
+  .cv4 { background:linear-gradient(160deg,#FAAD14,#D6720A); }
+  .cv5 { background:linear-gradient(160deg,#9B6BFF,#5A2ED6); }
+  .cv6 { background:linear-gradient(160deg,#2CC4C4,#0A7A8C); }
+  .cv7 { background:linear-gradient(160deg,#FF8A5C,#D6452A); }
+  .cv8 { background:linear-gradient(160deg,#5C8AFF,#2A4ED6); }
+  .cv9 { background:linear-gradient(160deg,#E88AD8,#A62AB8); }
+
+  /* 标题实心方框占位 */
+  .title-ph { display:block; width:75%; height:12px; border-radius:3px; background:#C0C4CC; }
+  .title-ph.short { width:50%; }
+
+  /* 底部 HdsTabs */
+  .tabbar { position:absolute; bottom:0; left:0; right:0; height:72px; z-index:25;
+    display:flex; justify-content:space-around; align-items:center;
+    padding-bottom:12px;
+    background:linear-gradient(180deg,rgba(241,243,245,0.4),rgba(241,243,245,0.9)); }
+  .tab-item { display:flex; flex-direction:column; align-items:center; gap:2px; }
+  .tab-item svg { width:24px; height:24px; }
+  .tab-item .l { font-size:11px; }
+  .tab-item.on svg path { fill:#145CDE; }
+  .tab-item.on .l { color:#145CDE; font-weight:600; }
+  .tab-item.off svg path { fill:#909399; }
+  .tab-item.off .l { color:#909399; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="deco d1"></div><div class="deco d2"></div><div class="deco d3"></div>
+  <div class="dots"></div>
+
+  <!-- 左侧文案 -->
+  <div class="copy">
+    <div class="badge"><span class="dot"></span>VENERA NEXT · HARMONYOS</div>
+    <h1>多源聚合<br>漫画<span class="hl">一站发现</span></h1>
+    <div class="sub">JS 插件化漫画源，自由扩展无限内容。<br>搜索、分类、排行，全部聚合于一个发现页。</div>
+    <div class="feats">
+      <div class="feat"><div class="ic">🔌</div>JS 插件源 · 自由扩展无限内容</div>
+      <div class="feat"><div class="ic">🔎</div>跨源聚合搜索，一次输入全网结果</div>
+      <div class="feat"><div class="ic">🏷️</div>分类 · 标签 · 排行多维浏览</div>
+    </div>
+  </div>
+
+  <!-- 手机 mockup: 发现页 -->
+  <div class="phone-wrap">
+    <div class="phone">
+      <div class="screen">
+        <div class="punch"></div>
+
+        <!-- 顶栏: 标题行 + ChipGroup -->
+        <div class="title-bar">
+          <div class="title-row">
+            <span class="t">发现</span>
+            <span class="spacer"></span>
+            <div class="icon-btn">
+              <svg viewBox="0 0 24 24" fill="#182431"><path d="M12 4V1L8 5l4 4V6c3.3 0 6 2.7 6 6s-2.7 6-6 6-6-2.7-6-6H4c0 4.4 3.6 8 8 8s8-3.6 8-8-3.6-8-8-8z"/></svg>
+            </div>
+            <div class="icon-btn">
+              <svg viewBox="0 0 24 24" fill="#182431"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z"/></svg>
+            </div>
+            <div class="icon-btn">
+              <svg viewBox="0 0 24 24" fill="#182431"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+            </div>
+          </div>
+          <!-- ChipGroup: 仅保留通用筛选，不含具体源名 -->
+          <div class="chip-row">
+            <div class="chip on">最新</div>
+            <div class="chip">推荐</div>
+          </div>
+        </div>
+
+        <!-- 内容区: parts + comic grid -->
+        <div class="content">
+          <!-- Part 1: 最新上架 -->
+          <div class="part">
+            <div class="part-title">
+              <div class="bar"></div>
+              <span class="t">最新上架</span>
+            </div>
+            <div class="comic-row">
+              <div class="comic-cell">
+                <div class="comic-cover"><div class="ph cv1"></div></div>
+                <div class="comic-title"><span class="title-ph"></span></div>
+              </div>
+              <div class="comic-cell">
+                <div class="comic-cover"><div class="ph cv2"></div></div>
+                <div class="comic-title"><span class="title-ph"></span></div>
+              </div>
+              <div class="comic-cell">
+                <div class="comic-cover"><div class="ph cv3"></div></div>
+                <div class="comic-title"><span class="title-ph short"></span></div>
+              </div>
+            </div>
+          </div>
+          <!-- Part 2: 热门推荐 -->
+          <div class="part">
+            <div class="part-title">
+              <div class="bar"></div>
+              <span class="t">热门推荐</span>
+            </div>
+            <div class="comic-row">
+              <div class="comic-cell">
+                <div class="comic-cover"><div class="ph cv4"></div></div>
+                <div class="comic-title"><span class="title-ph"></span></div>
+              </div>
+              <div class="comic-cell">
+                <div class="comic-cover"><div class="ph cv5"></div></div>
+                <div class="comic-title"><span class="title-ph"></span></div>
+              </div>
+              <div class="comic-cell">
+                <div class="comic-cover"><div class="ph cv6"></div></div>
+                <div class="comic-title"><span class="title-ph short"></span></div>
+              </div>
+            </div>
+          </div>
+          <!-- Part 3: 编辑精选 -->
+          <div class="part">
+            <div class="part-title">
+              <div class="bar"></div>
+              <span class="t">编辑精选</span>
+            </div>
+            <div class="comic-row">
+              <div class="comic-cell">
+                <div class="comic-cover"><div class="ph cv7"></div></div>
+                <div class="comic-title"><span class="title-ph"></span></div>
+              </div>
+              <div class="comic-cell">
+                <div class="comic-cover"><div class="ph cv8"></div></div>
+                <div class="comic-title"><span class="title-ph short"></span></div>
+              </div>
+              <div class="comic-cell">
+                <div class="comic-cover"><div class="ph cv9"></div></div>
+                <div class="comic-title"><span class="title-ph"></span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部 HdsTabs 浮动页签 -->
+        <div class="tabbar">
+          <div class="tab-item off">
+            <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z" fill="#909399"/></svg>
+            <span class="l">书架</span>
+          </div>
+          <div class="tab-item on">
+            <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill="#145CDE"/></svg>
+            <span class="l">发现</span>
+          </div>
+          <div class="tab-item off">
+            <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" fill="#909399"/></svg>
+            <span class="l">设置</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

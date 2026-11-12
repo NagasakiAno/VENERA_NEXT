@@ -1,12 +1,11 @@
 /**
  * VeneraNext 响应式断点工具
- * 规范来源: HarmonyOS 一次开发多端部署 + @ohos.display 折叠状态
- * 判定宽屏形态的两个维度:
- *   1. 折叠设备展开态(FoldStatus.EXPANDED) -> 平板分栏(如 Pura X 1.414:1 内屏)
- *   2. 窗口宽度断点 lg/xl(平板/横屏)
- * 折叠状态由 OH_DisplayManager(display) 提供, 比窗口宽度/高宽比更可靠,
- * 尤其适用于"宽度中等但比例矮胖"的阔折叠内屏。
+ * 判定宽屏形态的核心逻辑: 按屏幕长宽比(aspect ratio)切换
+ *   - 宽 > 高 (横屏/平板横放) → 宽屏形态(平板分栏 UI)
+ *   - 宽 <= 高 (竖屏/手机/折叠屏展开) → 窄屏形态(手机 UI)
+ * 此方案修复了 PURA X 展开内屏误判为平板、MatePad 竖屏误判为平板的问题。
  */
+import { deviceInfo } from '@kit.BasicServicesKit';
 
 /** 窗口宽度(vp) */
 export const WIN_WVP: string = 'winWidthVp';
@@ -18,6 +17,8 @@ export const IS_WIDE: string = 'isWide';
 export const FOLD_EXPANDED: string = 'foldExpanded';
 /** 宽度断点字符串(供 GridRow/网格列数 使用) */
 export const WIDTH_BP: string = 'widthBp';
+/** 是否 PC(2in1) 设备 */
+export const IS_PC: string = 'isPc';
 
 /** 初始化默认手机形态 */
 export function initBreakpoints(): void {
@@ -26,15 +27,25 @@ export function initBreakpoints(): void {
   AppStorage.setOrCreate<boolean>(FOLD_EXPANDED, false);
   AppStorage.setOrCreate<string>(WIDTH_BP, 'md');
   AppStorage.setOrCreate<boolean>(IS_WIDE, false);
+  AppStorage.setOrCreate<boolean>(IS_PC, isPcDevice());
+}
+
+/** 是否 PC(2in1) 设备 */
+export function isPcDevice(): boolean {
+  try {
+    return deviceInfo.deviceType === '2in1';
+  } catch (e) {
+    return false;
+  }
 }
 
 /**
  * 设置折叠设备是否展开(由 display.foldStatusChange 驱动)
+ * 注意: 折叠状态仅作信息记录, 不再影响宽屏判定(改用长宽比)
  * @param expanded true=完全展开
  */
 export function setFoldStatus(expanded: boolean): void {
   AppStorage.setOrCreate<boolean>(FOLD_EXPANDED, expanded);
-  recomputeWide();
 }
 
 /**
@@ -57,11 +68,13 @@ export function updateWindowSize(wvp: number, hvp: number): void {
   recomputeWide();
 }
 
-/** 依据折叠状态 + 宽度断点 重算宽屏态 */
+/** 依据屏幕长宽比重算宽屏态: 宽>高 → 平板分栏, 宽<=高 → 手机形态 */
 function recomputeWide(): void {
-  const folded = AppStorage.get<boolean>(FOLD_EXPANDED) ?? false;
-  const bp = AppStorage.get<string>(WIDTH_BP) ?? 'md';
-  const wide = folded || bp === 'lg' || bp === 'xl';
+  const w = AppStorage.get<number>(WIN_WVP) ?? 390;
+  const h = AppStorage.get<number>(WIN_HVP) ?? 844;
+  const pc = AppStorage.get<boolean>(IS_PC) ?? false;
+  // PC 端优先使用平板横屏布局(窗口比例不满足也保持分栏形态)
+  const wide = pc || w > h;
   AppStorage.setOrCreate<boolean>(IS_WIDE, wide);
 }
 

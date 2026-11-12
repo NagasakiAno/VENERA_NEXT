@@ -18,7 +18,7 @@ import { ShelfItem, ShelfSourceType } from '../model/ShelfItem';
 import { ReaderChapter } from '../model/ReaderModel';
 import { ensureBookData } from '../utils/FileImporter';
 import { PRIMARY, GRAY_500, GRAY_900, CARD, BG, FS_SMALL, RADIUS_LG, GRAY_100 } from '../utils/Design';
-import { IS_WIDE, WIDTH_BP } from '../utils/Breakpoints';
+import { IS_WIDE, WIDTH_BP, WIN_WVP, WIN_HVP, IS_PC } from '../utils/Breakpoints';
 import { HdsTabs, HdsTabsController, hdsMaterial } from '@kit.UIDesignKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { comicSourceManager } from '../model/ComicSource';
@@ -28,6 +28,9 @@ import { ComicSourceMeta } from '../model/sources/ComicSourceMeta';
 @Component
 struct Index {
   @StorageProp(IS_WIDE) isWide: boolean = false;
+  @StorageProp(WIN_WVP) winWvp: number = 390;
+  @StorageProp(WIN_HVP) winHvp: number = 844;
+  @StorageProp(IS_PC) isPc: boolean = false;
   @StorageProp(WIDTH_BP) widthBp: string = 'md';
   @State currentIndex: number = 0;
   private tabs: string[] = ['书架', '发现', '设置'];
@@ -359,7 +362,7 @@ struct Index {
       }
     }
     .width('100%').height('100%')
-    .constraintSize({ maxWidth: 1080 })
+    .constraintSize({ maxWidth: this.isPc ? 99999 : 1080 })
     .layoutWeight(1)
   }
 
@@ -438,72 +441,104 @@ struct Index {
     .animation({ duration: 350, curve: Curve.EaseOut })
   }
 
+  /**
+   * PC 端整体等比缩放: 平板布局按窗口尺寸设计, 全屏后窗口变大, 内容如果仍按固定 vp 排版会显得很小。
+   * 这里以内层容器 winW/scale × winH/scale 布局, 再整体 scale 放大, 实现等比例自适应。
+   */
+  private uiScale(): number {
+    if (!this.isPc) {
+      return 1;
+    }
+    const w = Math.max(1, this.winWvp);
+    const h = Math.max(1, this.winHvp);
+    const s = Math.min(w / 1180, h / 760);
+    return Math.max(1, Math.min(1.8, s));
+  }
+
+  /** 内层布局宽(vp) */
+  private layoutW(): number {
+    return Math.max(1, this.winWvp) / this.uiScale();
+  }
+
+  /** 内层布局高(vp) */
+  private layoutH(): number {
+    return Math.max(1, this.winHvp) / this.uiScale();
+  }
+
+
   build() {
     Stack() {
-      // 页面内容层: 整体下移 40 避免入侵状态栏
+      // 内层: 以 layoutW × layoutH 的 vp 尺寸布局(PC 全屏时小于窗口), 再整体 scale 到窗口大小
       Stack() {
-        if (this.isWide) {
-          this.landscapeFrame()
-        } else {
-          this.portraitFrame()
-        }
-
-        // 横屏: 右侧详情覆盖层(带遮罩)
-        if (this.isWide && this.showDetail) {
-          Row() {
-            // 半透明遮罩(点击关闭)
-            Column().width('100%').height('100%').backgroundColor('#40000000').layoutWeight(1)
-              .onClick(() => { this.closeDetail(); })
-            // 右侧详情面板
-            this.landscapeDetailSheet()
-          }
-          .width('100%').height('100%').alignItems(VerticalAlign.Top)
-        }
+            // 页面内容层: 整体下移 40 避免入侵状态栏
+            Stack() {
+              if (this.isWide) {
+                this.landscapeFrame()
+              } else {
+                this.portraitFrame()
+              }
+      
+              // 横屏: 右侧详情覆盖层(带遮罩)
+              if (this.isWide && this.showDetail) {
+                Row() {
+                  // 半透明遮罩(点击关闭)
+                  Column().width('100%').height('100%').backgroundColor('#40000000').layoutWeight(1)
+                    .onClick(() => { this.closeDetail(); })
+                  // 右侧详情面板
+                  this.landscapeDetailSheet()
+                }
+                .width('100%').height('100%').alignItems(VerticalAlign.Top)
+              }
+            }
+            .width('100%').height('100%')
+            .padding({ top: 40 })
+            .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+      
+            // 搜索覆盖层: 不参与上面的状态栏下移, 以便顶栏材质铺满到屏幕顶端
+            if (this.showSearch) {
+              SearchPage({
+                onClose: (): void => { this.showSearch = false; },
+                onOpenComic: (sk: string, sn: string, id: string): void => this.openWebComic(sk, sn, id)
+              })
+                .width('100%').height('100%')
+            }
+      
+            // 在线漫画详情(ComicDetailSheet): 层级在搜索之上、阅读器之下
+            ComicDetailSheet({
+              visible: this.webDetailVisible,
+              sourceKey: this.webDetailSourceKey,
+              sourceName: this.webDetailSourceName,
+              comicId: this.webDetailComicId,
+              onClose: (): void => this.closeWebComic()
+            })
+      
+            // 全局阅读器: 窗口根层挂载(最高层), 覆盖整个窗口(含 sidebar/页签/状态栏区域)
+            if (this.readerVisible) {
+              ReaderPage({
+                chapterId: 1,
+                externalChapter: this.readerSession.chapter,
+                hasPrevChapter: this.readerSession.hasPrev,
+                hasNextChapter: this.readerSession.hasNext,
+                remoteLoader: this.readerSession.loader,
+                onSwitchChapter: this.readerSession.switcher,
+                onProgress: this.readerSession.onProgress,
+                initialPage: this.readerSession.startPage,
+                onBack: (): void => this.closeReader()
+              })
+              .width('100%').height('100%')
+            }
+      
+            // 启动品牌页(最顶层, 1.5s 后自动淡出)
+            if (!this.splashGone) {
+              this.splashOverlay()
+            }
       }
-      .width('100%').height('100%')
-      .padding({ top: 40 })
-      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
-
-      // 搜索覆盖层: 不参与上面的状态栏下移, 以便顶栏材质铺满到屏幕顶端
-      if (this.showSearch) {
-        SearchPage({
-          onClose: (): void => { this.showSearch = false; },
-          onOpenComic: (sk: string, sn: string, id: string): void => this.openWebComic(sk, sn, id)
-        })
-          .width('100%').height('100%')
-      }
-
-      // 在线漫画详情(ComicDetailSheet): 层级在搜索之上、阅读器之下
-      ComicDetailSheet({
-        visible: this.webDetailVisible,
-        sourceKey: this.webDetailSourceKey,
-        sourceName: this.webDetailSourceName,
-        comicId: this.webDetailComicId,
-        onClose: (): void => this.closeWebComic()
-      })
-
-      // 全局阅读器: 窗口根层挂载(最高层), 覆盖整个窗口(含 sidebar/页签/状态栏区域)
-      if (this.readerVisible) {
-        ReaderPage({
-          chapterId: 1,
-          externalChapter: this.readerSession.chapter,
-          hasPrevChapter: this.readerSession.hasPrev,
-          hasNextChapter: this.readerSession.hasNext,
-          remoteLoader: this.readerSession.loader,
-          onSwitchChapter: this.readerSession.switcher,
-          onProgress: this.readerSession.onProgress,
-          initialPage: this.readerSession.startPage,
-          onBack: (): void => this.closeReader()
-        })
-        .width('100%').height('100%')
-      }
-
-      // 启动品牌页(最顶层, 1.5s 后自动淡出)
-      if (!this.splashGone) {
-        this.splashOverlay()
-      }
+      .width(this.layoutW())
+      .height(this.layoutH())
+      .scale({ x: this.uiScale(), y: this.uiScale() })
     }
     .width('100%').height('100%').backgroundColor(BG)
+    .alignContent(Alignment.Center)
   }
 }
 

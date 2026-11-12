@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:1920px; height:1080px; overflow:hidden;
+    font-family:"HarmonyOS Sans SC","Microsoft YaHei",sans-serif; }
+
+  /* === 舞台 === */
+  .stage { width:1920px; height:1080px; position:relative;
+    background:linear-gradient(120deg,#182431 0%,#1E2B3C 55%,#2C3E56 100%);
+    display:flex; align-items:center; }
+  .deco { position:absolute; border-radius:50%; pointer-events:none; }
+  .d1 { width:700px; height:700px; top:-260px; left:-200px;
+    background:radial-gradient(circle,rgba(20,92,222,0.3),transparent 70%); }
+  .d2 { width:520px; height:520px; bottom:-200px; right:-120px;
+    background:radial-gradient(circle,rgba(77,139,255,0.22),transparent 70%); }
+  .glow { position:absolute; width:900px; height:500px; right:280px; top:290px;
+    background:radial-gradient(ellipse,rgba(20,92,222,0.25),transparent 65%); }
+
+  /* === 右侧文案 === */
+  .copy { position:absolute; right:120px; top:50%; transform:translateY(-50%); width:720px; color:#fff; z-index:5; }
+  .badge { display:inline-flex; align-items:center; gap:10px; background:rgba(20,92,222,0.35);
+    border:1px solid rgba(122,168,255,0.45); border-radius:999px; padding:9px 22px;
+    font-size:20px; letter-spacing:2px; margin-bottom:30px; color:#ADCCFF; }
+  h1 { font-size:78px; line-height:1.18; font-weight:800; letter-spacing:1px; }
+  h1 .hl { color:#6FA8FF; }
+  .sub { margin-top:24px; font-size:25px; line-height:1.65; color:rgba(255,255,255,0.72); font-weight:300; }
+  .feats { margin-top:42px; display:flex; flex-direction:column; gap:18px; }
+  .feat { display:flex; align-items:center; gap:14px; font-size:23px; color:rgba(255,255,255,0.9); }
+  .feat .ic { width:48px; height:48px; border-radius:12px; background:rgba(20,92,222,0.35);
+    border:1px solid rgba(122,168,255,0.3); display:flex; align-items:center; justify-content:center;
+    font-size:21px; flex-shrink:0; }
+
+  /* === 手机 mockup（详情页）=== */
+  .phone-wrap { position:absolute; left:160px; top:50%; transform:translateY(-50%) rotate(3deg); z-index:4; }
+  .phone { width:420px; height:880px; background:#05070A; border-radius:54px; padding:13px;
+    box-shadow:0 50px 120px rgba(0,0,0,0.55), 0 0 0 2px rgba(122,168,255,0.2) inset; position:relative; }
+  .screen { width:100%; height:100%; border-radius:42px; overflow:hidden; background:#F1F3F5; position:relative; }
+  .punch { position:absolute; top:13px; left:50%; transform:translateX(-50%); width:104px; height:28px;
+    background:#05070A; border-radius:999px; z-index:30; }
+
+  /* === 详情页 UI（严格对齐 ComicDetailPage.ets）=== */
+  .detail-scroll { position:absolute; top:0; left:0; right:0; bottom:0; overflow:hidden;
+    padding:48px 16px 16px; }
+
+  /* infoSection: cover 96x128 + 标题/副标题/作者/chips */
+  .info-row { display:flex; gap:12px; align-items:flex-start; margin-top:12px; }
+  .info-cover { width:96px; height:128px; border-radius:8px; background:#F1F3F5; overflow:hidden;
+    flex-shrink:0; }
+  .info-cover .ph { width:100%; height:100%; background:linear-gradient(160deg,#FF6B9D,#C44569); }
+  .info-col { flex:1; display:flex; flex-direction:column; gap:4px; align-items:flex-start; }
+  .info-title { font-size:20px; font-weight:700; color:#182431; line-height:1.3;
+    overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; width:100%; }
+  .info-sub { font-size:12px; color:#909399; width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .info-author { font-size:13px; color:#909399; width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .info-chips { display:flex; gap:6px; margin-top:2px; }
+  .info-chip { font-size:12px; padding:4px 10px; border-radius:4px; }
+  .chip-fav { color:#fff; background:#52C41A; }
+
+  /* 标题实心方框占位 */
+  .title-ph { display:block; height:16px; border-radius:3px; background:#C0C4CC; }
+  .title-ph.w80 { width:80%; }
+  .title-ph.w60 { width:60%; }
+  .title-ph.w40 { width:40%; }
+  .title-ph.w30 { width:30%; }
+  .title-ph.sm { height:12px; }
+
+  /* metaRow: 3 cells in white card */
+  .meta-card { display:flex; width:100%; background:#fff; border-radius:12px;
+    padding:12px 16px; margin-top:12px; justify-content:space-around; }
+  .meta-cell { display:flex; flex-direction:column; gap:2px; align-items:center; }
+  .meta-val { font-size:15px; font-weight:700; color:#182431; }
+  .meta-label { font-size:12px; color:#909399; }
+
+  /* actionRow: 收藏/下载/分享 + 继续阅读/开始阅读 */
+  .action-row { display:flex; gap:10px; margin-top:12px; }
+  .act-btn { width:72px; height:48px; border-radius:8px; background:#F1F3F5;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; flex-shrink:0; }
+  .act-btn svg { width:22px; height:22px; }
+  .act-btn .l { font-size:12px; color:#909399; }
+  .act-continue { height:48px; flex:1; border-radius:8px; background:#145CDE;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; }
+  .act-continue .l1 { font-size:15px; color:#fff; font-weight:500; }
+  .act-continue .l2 { font-size:9px; color:rgba(255,255,255,0.8); }
+  .act-start { height:48px; flex:1; border-radius:8px; background:#EBF2FF;
+    display:flex; align-items:center; justify-content:center; }
+  .act-start .l { font-size:15px; color:#145CDE; font-weight:500; }
+
+  /* tagSection: grouped by namespace */
+  .tag-sec { margin-top:16px; }
+  .tag-sec-title { font-size:17px; font-weight:700; color:#182431; width:100%; }
+  .tag-group { margin-top:8px; }
+  .tag-ns { font-size:12px; font-weight:500; margin-bottom:4px; }
+  .tag-capsules { display:flex; flex-wrap:wrap; gap:6px; }
+  .tag-cap { font-size:12px; padding:4px 10px; border-radius:12px; }
+
+  /* 章节列表 */
+  .ch-sec { margin-top:16px; }
+  .ch-header { display:flex; align-items:center; justify-content:space-between; }
+  .ch-title { font-size:17px; font-weight:700; color:#182431; }
+  .ch-reverse { font-size:12px; color:#909399; }
+  .ch-list { margin-top:8px; }
+  .ch-row { display:flex; align-items:center; gap:12px; height:52px; }
+  .ch-num { width:28px; height:28px; border-radius:14px; background:#F1F3F5;
+    display:flex; align-items:center; justify-content:center; font-size:12px; color:#909399; flex-shrink:0; }
+  .ch-name { font-size:15px; color:#182431; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ch-progress { font-size:10px; color:#145CDE; }
+  .ch-arrow { width:14px; height:14px; flex-shrink:0; }
+
+  /* === 次要手机（阅读器）=== */
+  .phone2-wrap { position:absolute; left:540px; top:56%; transform:translateY(-50%) rotate(10deg); z-index:3; }
+  .phone2 { width:340px; height:720px; background:#05070A; border-radius:46px; padding:11px;
+    box-shadow:0 40px 90px rgba(0,0,0,0.5), 0 0 0 2px rgba(122,168,255,0.15) inset; }
+  .screen2 { width:100%; height:100%; border-radius:36px; overflow:hidden; background:#000; position:relative; }
+  .punch2 { position:absolute; top:11px; left:50%; transform:translateX(-50%); width:84px; height:22px;
+    background:#05070A; border-radius:999px; z-index:30; }
+
+  /* 阅读器 UI（对齐 ReaderPage.ets）*/
+  .reader-page { position:absolute; inset:0; background:#000; }
+  .reader-blur-bg { position:absolute; inset:0; }
+  .reader-blur-bg .ph { width:100%; height:100%; object-fit:cover; filter:blur(30px); opacity:0.6; }
+  .reader-img { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+  .reader-img .ph { width:100%; height:100%; object-fit:contain; }
+  .reader-tabbar { position:absolute; bottom:12px; right:12px; z-index:10;
+    background:rgba(0,0,0,0.6); border-radius:16px; padding:6px 14px;
+    display:flex; align-items:center; gap:8px; }
+  .reader-tabbar .p { font-size:12px; color:rgba(255,255,255,0.9); }
+  .reader-tabbar .sep { color:rgba(255,255,255,0.4); }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="deco d1"></div><div class="deco d2"></div>
+  <div class="glow"></div>
+
+  <!-- 手机 mockup: 详情页 -->
+  <div class="phone-wrap">
+    <div class="phone">
+      <div class="screen">
+        <div class="punch"></div>
+        <div class="detail-scroll">
+
+          <!-- infoSection -->
+          <div class="info-row">
+            <div class="info-cover"><div class="ph"></div></div>
+            <div class="info-col">
+              <div class="info-title"><span class="title-ph w80"></span></div>
+              <div class="info-sub"><span class="title-ph w40 sm"></span></div>
+              <div class="info-author"><span class="title-ph w30 sm"></span></div>
+              <div class="info-chips">
+                <span class="info-chip chip-fav">已收藏</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- metaRow -->
+          <div class="meta-card">
+            <div class="meta-cell"><span class="meta-val">12.8K</span><span class="meta-label">点赞</span></div>
+            <div class="meta-cell"><span class="meta-val">2024-03</span><span class="meta-label">最近更新</span></div>
+            <div class="meta-cell"><span class="meta-val">128</span><span class="meta-label">章节</span></div>
+          </div>
+
+          <!-- actionRow -->
+          <div class="action-row">
+            <div class="act-btn">
+              <svg viewBox="0 0 24 24" fill="#E8455E"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+              <span class="l">已收藏</span>
+            </div>
+            <div class="act-btn">
+              <svg viewBox="0 0 24 24" fill="#909399"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+              <span class="l">下载</span>
+            </div>
+            <div class="act-btn">
+              <svg viewBox="0 0 24 24" fill="#909399"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>
+              <span class="l">分享</span>
+            </div>
+            <div class="act-continue">
+              <span class="l1">继续阅读</span>
+              <span class="l2">第42话 · P3/25</span>
+            </div>
+          </div>
+
+          <!-- tagSection -->
+          <div class="tag-sec">
+            <div class="tag-sec-title">标签</div>
+            <!-- 分类组 -->
+            <div class="tag-group">
+              <div class="tag-ns" style="color:#722ED1;">分类</div>
+              <div class="tag-capsules">
+                <span class="tag-cap" style="color:#722ED1;background:#1A722ED1;">连载中</span>
+                <span class="tag-cap" style="color:#722ED1;background:#1A722ED1;">冒险</span>
+                <span class="tag-cap" style="color:#722ED1;background:#1A722ED1;">奇幻</span>
+              </div>
+            </div>
+            <!-- 标签组 -->
+            <div class="tag-group">
+              <div class="tag-ns" style="color:#FA8C16;">标签</div>
+              <div class="tag-capsules">
+                <span class="tag-cap" style="color:#FA8C16;background:#1AFA8C16;">连载中</span>
+                <span class="tag-cap" style="color:#FA8C16;background:#1AFA8C16;">月更</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 章节列表 -->
+          <div class="ch-sec">
+            <div class="ch-header">
+              <span class="ch-title">章节</span>
+              <span class="ch-reverse">倒序</span>
+            </div>
+            <div class="ch-list">
+              <div class="ch-row">
+                <div class="ch-num">1</div>
+                <span class="ch-name"><span class="title-ph w60 sm"></span></span>
+                <svg class="ch-arrow" viewBox="0 0 24 24" fill="#909399"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+              </div>
+              <div class="ch-row">
+                <div class="ch-num">2</div>
+                <span class="ch-name"><span class="title-ph w60 sm"></span></span>
+                <svg class="ch-arrow" viewBox="0 0 24 24" fill="#909399"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+              </div>
+              <div class="ch-row">
+                <div class="ch-num">42</div>
+                <span class="ch-name"><span class="title-ph w60 sm"></span></span>
+                <span class="ch-progress">读到第 3 页</span>
+                <svg class="ch-arrow" viewBox="0 0 24 24" fill="#909399"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+              </div>
+              <div class="ch-row">
+                <div class="ch-num">43</div>
+                <span class="ch-name"><span class="title-ph w60 sm"></span></span>
+                <svg class="ch-arrow" viewBox="0 0 24 24" fill="#909399"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 次要手机: 阅读器 -->
+  <div class="phone2-wrap">
+    <div class="phone2">
+      <div class="screen2">
+        <div class="punch2"></div>
+        <div class="reader-page">
+          <div class="reader-blur-bg">
+            <img class="ph" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='340' height='720'%3E%3Crect width='340' height='720' fill='%233A4A63'/%3E%3C/svg%3E" style="filter:blur(30px);object-fit:cover;width:100%;height:100%;">
+          </div>
+          <div class="reader-img">
+            <img class="ph" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='340' height='720'%3E%3Crect width='340' height='720' fill='%233A4A63'/%3E%3Ccircle cx='240' cy='180' r='55' fill='%23FFF6D8' opacity='0.9'/%3E%3Crect x='0' y='400' width='180' height='320' rx='90' fill='%234A5C7A'/%3E%3Crect x='120' y='380' width='220' height='340' rx='110' fill='%233C4C68'/%3E%3C/svg%3E" style="object-fit:contain;width:100%;height:100%;">
+          </div>
+          <div class="reader-tabbar">
+            <span class="p">3</span><span class="sep">/</span><span class="p">25</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右侧文案 -->
+  <div class="copy">
+    <div class="badge">✦ VENERA NEXT · 阅读体验</div>
+    <h1>沉浸式阅读<br><span class="hl">每一页</span>都是享受</h1>
+    <div class="sub">全屏沉浸阅读、多种翻页模式、阅读进度自动记录。<br>详情页一键直达章节，漫画 ID 精准定位。</div>
+    <div class="feats">
+      <div class="feat"><div class="ic">📖</div>翻页 / 滚动双模式，横屏自动双页并排</div>
+      <div class="feat"><div class="ic">☁️</div>阅读进度与收藏自动同步回源账号</div>
+      <div class="feat"><div class="ic">🔖</div>漫画 ID 标签 · 搜索框一键直达</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

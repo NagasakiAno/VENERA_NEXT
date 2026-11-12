@@ -6,7 +6,8 @@
     "mainElement": "EntryAbility",
     "deviceTypes": [
       "phone",
-      "tablet"
+      "tablet",
+      "2in1"
     ],
     "deliveryWithInstall": true,
     "installationFree": false,
@@ -47,6 +48,15 @@
         "label": "$string:EntryAbility_label",
         "startWindowIcon": "$media:startIcon",
         "startWindowBackground": "$color:start_window_background",
+        // PC(2in1) 适配: 支持全屏/分屏/自由窗口, 优先横屏布局
+        "supportWindowMode": [
+          "fullscreen",
+          "floating",
+          "split"
+        ],
+        "preferMultiWindowOrientation": "landscape_auto",
+        "minWindowWidth": 360,
+        "minWindowHeight": 480,
         "exported": true,
         "skills": [
           {
@@ -55,6 +65,42 @@
             ],
             "actions": [
               "ohos.want.action.home"
+            ]
+          },
+          {
+            "actions": [
+              "ohos.want.action.sendData"
+            ],
+            "uris": [
+              {
+                "scheme": "utd",
+                "host": "general.hyperlink"
+              }
+            ]
+          },
+          {
+            "actions": [
+              "ohos.want.action.sendData"
+            ],
+            "uris": [
+              {
+                "scheme": "utd",
+                "host": "general.plain-text"
+              }
+            ]
+          },
+          {
+            "entities": [
+              "entity.system.browsable"
+            ],
+            "actions": [
+              "ohos.want.action.viewData"
+            ],
+            "uris": [
+              {
+                "scheme": "veneranext",
+                "host": "share"
+              }
             ]
           }
         ]
